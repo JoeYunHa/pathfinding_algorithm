@@ -48,7 +48,7 @@ class SubwayDataLoader:
 
         graph = {"nodes": {}, "edges": [], "transfers": {}, "accessibility": {}}
 
-        # node 생성
+        # node 생성 -> WGS84 좌표계 사용
         for _, row in self.stations_df.iterrows():
             station_id = row["station_id"]
             graph["nodes"][station_id] = {
@@ -56,8 +56,8 @@ class SubwayDataLoader:
                 "name_e": row["station_name_e"],
                 "line_id": row["line_id"],
                 "line_num": row["line_num"],
-                "x_coord": row["x_coord"],
-                "y_coord": row["y_coord"],
+                "x_coord": row["x_coord"], # 경도
+                "y_coord": row["y_coord"], # 위도
                 # tranfer_line_num과 express_info 모두 0이면 환승역/급행 정차역 아님
                 "is_transfer": pd.notna(row["transfer_line_num"])
                 and row["transfer_line_num"] > 0,
@@ -74,7 +74,7 @@ class SubwayDataLoader:
                 next_station = row["next_station_id"]
                 prev_station = row["prev_station_id"]
 
-                # type 변환
+                # type 변환, 시작역/종착역 처리
                 if (
                     pd.notna(next_station)
                     and next_station > 0
