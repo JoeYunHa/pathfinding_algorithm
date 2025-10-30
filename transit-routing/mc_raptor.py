@@ -161,17 +161,28 @@ class McRAPTOR:
             )
         )
 
+        # debugging용 로그
+        logger.info(f"Origin line: {line_num}")
+        logger.info(f"Initial labels: {labels}")
+        logger.info(f"Starting first round")
+
         # round별 탐색
         for round_num in range(max_rounds):
-            updated = False
+            logger.info(f"현재 라운드 : {round_num}")
 
+            updated = False
             # 모든 역에서 확장
             for station_name, station_labels in list(labels.items()):
+                logger.info(
+                    f"Checking station: {station_name}, labels: {len(station_labels)}"
+                )
                 if station_name not in self.graph:
                     continue
 
                 # 인접 역으로 확장
+                
                 for neighbor in self.graph[station_name]:
+                    logger.info(f"  Neighbor: {neighbor['to']}")
                     next_station = neighbor["to"]
 
                     for label in station_labels:
