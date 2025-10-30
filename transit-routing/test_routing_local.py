@@ -54,20 +54,20 @@ def test_routing_local():
     logger.info(f"First 5 graph keys: {list(mc_raptor.graph.keys())[:5]}")
 
     # 5. 테스트할 역 확인
-    origin = "광화문"
-    destination = "남성"
+    origin = "충무로"
+    destination = "동묘앞"
 
     logger.info(f"\n=== 경로 탐색 테스트 ===")
     logger.info(f"출발: {origin}, 도착: {destination}")
-    logger.info(f"'{origin}' in graph: {origin in mc_raptor.graph}")
-    logger.info(f"'{destination}' in graph: {destination in mc_raptor.graph}")
+    # logger.info(f"'{origin}' in graph: {origin in mc_raptor.graph}")
+    # logger.info(f"'{destination}' in graph: {destination in mc_raptor.graph}")
 
-    if origin in mc_raptor.graph:
-        logger.info(f"'{origin}' neighbors: {mc_raptor.graph[origin][:3]}")
+    # if origin in mc_raptor.graph:
+    #     logger.info(f"'{origin}' neighbors: {mc_raptor.graph[origin][:3]}")
     
-    logger.info(f"'군자' in graph: {'군자' in mc_raptor.graph}")
-    if '군자' in mc_raptor.graph:
-        logger.info(f"'군자' neighbors: {mc_raptor.graph['군자']}")
+    # logger.info(f"'군자' in graph: {'군자' in mc_raptor.graph}")
+    # if '군자' in mc_raptor.graph:
+    #     logger.info(f"'군자' neighbors: {mc_raptor.graph['군자']}")
 
     # 6. 경로 찾기
     try:
