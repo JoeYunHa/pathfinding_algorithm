@@ -17,7 +17,8 @@ class Label:
     walking_distance: float
     convenience_score: float
     route: List[str] = field(default_factory=list)
-    lines: List[int]
+    lines: List[str] = field(default_factory=list)
+    # 지나가는 역들의 line 정보를 담는 list -> 환승 여부 및 횟수 파악
     # 경로는 지나가야 하는 지하철역의 list형태
 
     def dominates(self, other: "Label") -> bool:
@@ -27,7 +28,7 @@ class Label:
             (self.arrival_time, other.arrival_time, False),
             (self.transfers, other.transfers, False),
             (self.walking_distance, other.walking_distance, False),
-            (self.conv_score, other.conv_score, True),
+            (self.convenience_score, other.convenience_score, True),
         ]
 
         for self_val, other_val, maximize in criteria:
@@ -125,7 +126,7 @@ class McRAPTOR:
         Mc-RAPTOR 알고리즘으로 파레토 최적 경로 탐색
 
         Args:
-            origin (str): 출발역
+            origin (str): 출발역(name)
             destination (str): 도착역
             departure_time (float): 출발 시각
             disability_type (str): user 유형(PHY/VIS/AUD/ELD)
@@ -136,14 +137,27 @@ class McRAPTOR:
         """
         # 파레토 프론티어
         labels = defaultdict(list)
+
+        # 출발역의 노선 찾기 -> 프론티어 초기화에 사용
+        line_num = None
+        for station in self.stations.values():
+            if station["name"] == origin:
+                line_num = station["line"]
+                break
+
+        # 출발역 노선이 없을 경우
+        if line_num is None:
+            raise ValueError(f"출발역 '{origin}'을 찾을 수 없습니다.")
+
+        # 파레토 프론티어 초기화
         labels[origin].append(
             Label(
                 arrival_time=departure_time,
                 transfers=0,
                 walking_distance=0,
-                conv_score=5.0,
+                convenience_score=5.0,
                 route=[origin],
-                lines=[0]
+                lines=[line_num],  # 출발역의 노선 번호로 초기화
             )
         )
 
@@ -158,7 +172,7 @@ class McRAPTOR:
 
                 # 인접 역으로 확장
                 for neighbor in self.graph[station_name]:
-                    next_station = neighbor['to']
+                    next_station = neighbor["to"]
 
                     for label in station_labels:
                         # 새로운 라벨 생성
@@ -166,8 +180,8 @@ class McRAPTOR:
                             label,
                             station_name,
                             next_station,
-                            neighbor['line'],
-                            disability_type
+                            neighbor["line"],
+                            disability_type,
                         )
 
                         # 파레토 최적성 검사
@@ -177,7 +191,8 @@ class McRAPTOR:
 
                             # 기존 라벨 중 지배당하는 것 제거
                             labels[next_station] = [
-                                l for l in labels[next_station]
+                                l
+                                for l in labels[next_station]
                                 if not new_label.dominates(l)
                             ]
             if not updated:
@@ -185,7 +200,9 @@ class McRAPTOR:
 
         return labels.get(destination, [])
 
-    def rank_routes(self, routes: List[Label], disability_type: str) -> List[Tuple[Label, float]]:
+    def rank_routes(
+        self, routes: List[Label], disability_type: str
+    ) -> List[Tuple[Label, float]]:
         """
         ANP 가중치로 경로 순위 결정
 
@@ -207,17 +224,18 @@ class McRAPTOR:
             scored_routes.append((route, score))
 
         # 점수 오름차순 정렬
-        scored_routes.sort(key=lambda x : x[1])
+        scored_routes.sort(key=lambda x: x[1])
 
         return scored_routes
 
-    def _create_new_label(self,
-                          prev_label: Label,
-                          from_station: str,
-                          to_station:str,
-                          line:str,
-                          disability_type: str
-                          ) -> Label:
+    def _create_new_label(
+        self,
+        prev_label: Label,
+        from_station: str,
+        to_station: str,
+        line: str,  # int로 변경?? -> X, DB에서 varchar(20)임
+        disability_type: str,
+    ) -> Label:
         """새로운 라벨 생성"""
         # 이동 시간 계산
         # 추후 실제 역간 운행 시간 db에 추가하여 수정하기
@@ -231,33 +249,38 @@ class McRAPTOR:
         walking = self.distance_calc.haversine(from_coords, to_coords) * 0.1
 
         # 시설 가중치 적용하여 편의도 계산
-        convenience = self._calculate_convenience_score(
-            to_station, disability_type
-        )
+        convenience = self._calculate_convenience_score(to_station, disability_type)
 
         # 환승 여부/횟수 확인
-        transfer_num = 0
-        for i in range(prev_label.lines):
-            if i != i+1:
-                transfer_num += 1
+
+        # for i in range(len(prev_label.lines) - 1):
+        #     if prev_label.lines[i] != prev_label.lines[i+1]:
+        #         transfer_num += 1 -> 이전 환승 횟수까지 세버림
+
+        # 마지막 역의 노선과 새로운 라벨의 출발역의 노선만 비교
+        # 구조상 불가능하지만 prev_label.lines가 빈 리스트일 경우 대비
+        is_transfer = (prev_label.lines[-1] != line) if prev_label.lines else False
+        transfer_num = 1 if is_transfer else 0
 
         return Label(
             arrival_time=prev_label.arrival_time + travel_time,
-            transfers=prev_label.transfers + transfer_num, # 환승 횟수 추가 
+            transfers=prev_label.transfers + transfer_num,  # 환승 횟수 추가
             walking_distance=prev_label.walking_distance + walking,
             convenience_score=min(prev_label.convenience_score, convenience),
             route=prev_label.route + [to_station],
-            lines=prev_label.lines + [line] # lines 갱신
-        )
+            lines=prev_label.lines + [line],  # lines(리스트임)
+        )  # list.append() -> return None이므로(in-place 수정 함수) append함수 쓰면 안됨
 
-    def _get_station_coords(self, station_name:str) -> Tuple[float,float]:
+    def _get_station_coords(self, station_name: str) -> Tuple[float, float]:
         """역 좌표 조회"""
         for station in self.stations.values():
-            if station['name'] == station_name:
-                return (station['lat'], station['lng'])
-        return (0,0) # 역 이름 매칭 실패
+            if station["name"] == station_name:
+                return (station["lat"], station["lng"])
+        return (0, 0)  # 역 이름 매칭 실패
 
-    def _calculate_convenience_score(self, station_name:str, disability_type: str) -> float:
+    def _calculate_convenience_score(
+        self, station_name: str, disability_type: str
+    ) -> float:
         """
         disability_type을 고려하여 역 편의성 점수 계산
 
@@ -299,9 +322,18 @@ class McRAPTOR:
         )
 
         return convenience_score
-    
+
+    def _is_pareto_optimal(
+        self, new_label: Label, existing_labels: List[Label]
+    ) -> bool:
+        """파레토 최적성 검사"""
+        for existing in existing_labels:
+            if existing.dominates(new_label):
+                return False
+        return True
+
     # def _is_different_line(self, station1: str, station2: str) -> bool
-    
+
     #     station1_line = None
     #     station2_line = None
     #     for station in self.stations.values():
@@ -309,5 +341,5 @@ class McRAPTOR:
     #             station1_line = station.get('line')
     #         elif station['name'] == station2:
     #             station2_line = station.get('line')
-        
+
     #     return station1_line != station2_line
