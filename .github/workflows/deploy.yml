@@ -1,0 +1,66 @@
+name: Build and Deploy to EC2
+
+on:
+  push:
+    branches:
+      - main  # 또는 develop, master 등
+
+permissions:
+  id-token: write  # OIDC 토큰 발급 권한
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      # 1. 코드 체크아웃
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      # 2. AWS 자격증명 설정 (OIDC)
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      
+      # 3. ECR 로그인
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      
+      # 4. Docker 이미지 빌드 및 푸시
+      - name: Build and push Docker image
+        env:
+          ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+      
+      # 5. EC2에 배포 명령 전송
+      - name: Deploy to EC2
+        env:
+          ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ github.sha }}
+          INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
+          CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }}
+          CONTAINER_PORT: ${{ secrets.CONTAINER_PORT }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          aws ssm send-command \
+            --instance-ids $INSTANCE_ID \
+            --document-name "AWS-RunShellScript" \
+            --parameters commands="[
+              'aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY',
+              'docker pull $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG',
+              'docker stop $CONTAINER_NAME || true',
+              'docker rm $CONTAINER_NAME || true',
+              'docker run -d --name $CONTAINER_NAME -p $CONTAINER_PORT:$CONTAINER_PORT $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG'
+            ]" \
+            --output text
