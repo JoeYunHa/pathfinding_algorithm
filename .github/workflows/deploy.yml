@@ -29,16 +29,9 @@ jobs:
         run: |
           ARN="${{ secrets.ECR_REPOSITORY_ARN }}"
           
-          # ARN에서 region 추출
           REGION=$(echo $ARN | cut -d':' -f4)
-          
-          # ARN에서 account ID 추출
           ACCOUNT_ID=$(echo $ARN | cut -d':' -f5)
-          
-          # ARN에서 repository name 추출
           REPO_NAME=$(echo $ARN | cut -d'/' -f2)
-          
-          # ECR Registry 구성
           REGISTRY="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
           
           echo "region=${REGION}" >> $GITHUB_OUTPUT
@@ -46,6 +39,16 @@ jobs:
           echo "repository=${REPO_NAME}" >> $GITHUB_OUTPUT
           echo "registry=${REGISTRY}" >> $GITHUB_OUTPUT
           echo "repository-uri=${REGISTRY}/${REPO_NAME}" >> $GITHUB_OUTPUT
+      
+      # EC2 인스턴스 정보 추출
+      - name: Extract EC2 details from ARN
+        id: ec2-details
+        run: |
+          ARN="${{ secrets.EC2_INSTANCE_ARN }}"
+          
+          INSTANCE_ID=$(echo $ARN | cut -d'/' -f2)
+          
+          echo "instance-id=${INSTANCE_ID}" >> $GITHUB_OUTPUT
       
       - name: Login to Amazon ECR
         id: login-ecr
@@ -67,7 +70,7 @@ jobs:
         env:
           REPOSITORY_URI: ${{ steps.ecr-details.outputs.repository-uri }}
           IMAGE_TAG: ${{ github.sha }}
-          INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
+          INSTANCE_ID: ${{ steps.ec2-details.outputs.instance-id }}
           CONTAINER_NAME: ${{ secrets.CONTAINER_NAME }}
           CONTAINER_PORT: ${{ secrets.CONTAINER_PORT }}
           AWS_REGION: ${{ steps.ecr-details.outputs.region }}
@@ -90,4 +93,4 @@ jobs:
         run: |
           echo "✅ Deployment completed"
           echo "📦 Image: ${{ steps.ecr-details.outputs.repository-uri }}:${{ github.sha }}"
-          echo "🚀 Instance: ${{ secrets.EC2_INSTANCE_ID }}"
+          echo "🚀 Instance: ${{ steps.ec2-details.outputs.instance-id }}"
