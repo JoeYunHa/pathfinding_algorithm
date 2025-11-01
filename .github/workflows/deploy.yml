@@ -83,7 +83,7 @@ jobs:
               'docker pull ${REPOSITORY_URI}:${IMAGE_TAG}',
               'docker stop ${CONTAINER_NAME} || true',
               'docker rm ${CONTAINER_NAME} || true',
-              'docker run -d --name ${CONTAINER_NAME} -p ${CONTAINER_PORT}:${CONTAINER_PORT} ${REPOSITORY_URI}:${IMAGE_TAG}'
+              'docker run -d --name ${CONTAINER_NAME} -p ${CONTAINER_PORT}:${CONTAINER_PORT} --env-file /home/ec2-user/.env ${REPOSITORY_URI}:${IMAGE_TAG}'
             ]" \
             --region us-west-2 \
             --output text
