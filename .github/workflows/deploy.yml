@@ -21,7 +21,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ap-northeast-2
       
       # ECR Repository 정보 추출
       - name: Extract ECR details from ARN
@@ -51,7 +51,6 @@ jobs:
           echo "instance-id=${INSTANCE_ID}" >> $GITHUB_OUTPUT
       
       - name: Login to Amazon ECR
-        id: login-ecr
         run: |
           aws ecr get-login-password --region ${{ steps.ecr-details.outputs.region }} | \
             docker login --username AWS --password-stdin ${{ steps.ecr-details.outputs.registry }}
@@ -86,7 +85,7 @@ jobs:
               'docker rm ${CONTAINER_NAME} || true',
               'docker run -d --name ${CONTAINER_NAME} -p ${CONTAINER_PORT}:${CONTAINER_PORT} ${REPOSITORY_URI}:${IMAGE_TAG}'
             ]" \
-            --region ${{ steps.ecr-details.outputs.region }} \
+            --region ap-northeast-2 \
             --output text
       
       - name: Verify deployment
