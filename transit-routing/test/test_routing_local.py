@@ -1,4 +1,7 @@
 import os
+import sys
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 
 # 환경변수 로드 => database 모듈 생성 이전에 호출해야 함
@@ -53,46 +56,46 @@ def test_routing_local():
     logger.info(f"Graph keys count: {len(mc_raptor.graph)}")
     logger.info(f"First 5 graph keys: {list(mc_raptor.graph.keys())[:5]}")
 
-    # 5. 테스트할 역 확인
-    origin = "충무로"
-    destination = "동묘앞"
+    # 5. 테스트 케이스 정의
+    test_cases = [
+        ("광화문", "남성"),
+        ("충무로", "동묘앞"),
+        ("구반포", "서울"),
+        ("청구", "숙대입구"),
+    ]
+    disability_type = "PHY"
 
-    logger.info(f"\n=== 경로 탐색 테스트 ===")
-    logger.info(f"출발: {origin}, 도착: {destination}")
-    # logger.info(f"'{origin}' in graph: {origin in mc_raptor.graph}")
-    # logger.info(f"'{destination}' in graph: {destination in mc_raptor.graph}")
-
-    # if origin in mc_raptor.graph:
-    #     logger.info(f"'{origin}' neighbors: {mc_raptor.graph[origin][:3]}")
-    
-    # logger.info(f"'군자' in graph: {'군자' in mc_raptor.graph}")
-    # if '군자' in mc_raptor.graph:
-    #     logger.info(f"'군자' neighbors: {mc_raptor.graph['군자']}")
-
-    # 6. 경로 찾기
-    try:
-        routes = mc_raptor.find_routes(
-            origin=origin,
-            destination=destination,
-            departure_time=540.0,
-            disability_type="PHY",
-            max_rounds=4,
+    # 6. 각 테스트 케이스 실행
+    for origin, destination in test_cases:
+        logger.info(f"\n{'='*50}")
+        logger.info(f"=== 경로 탐색 테스트 ===")
+        logger.info(
+            f"출발: {origin}, 도착: {destination}, 교통약자 타입: {disability_type}"
         )
 
-        logger.info(f"\n찾은 경로 수: {len(routes)}")
+        try:
+            routes = mc_raptor.find_routes(
+                origin=origin,
+                destination=destination,
+                departure_time=540.0,
+                disability_type=disability_type,
+                max_rounds=5,
+            )
 
-        if routes:
-            ranked = mc_raptor.rank_routes(routes, "PHY")
-            for i, (route, score) in enumerate(ranked[:3], 1):
-                logger.info(f"\n=== Route {i} ===")
-                logger.info(f"Score: {score:.4f}")
-                logger.info(f"Transfers: {route.transfers}")
-                logger.info(f"Route: {' -> '.join(route.route)}")
-        else:
-            logger.warning("경로를 찾지 못했습니다.")
+            logger.info(f"\n찾은 경로 수: {len(routes)}")
 
-    except Exception as e:
-        logger.error(f"Error: {e}", exc_info=True)
+            if routes:
+                ranked = mc_raptor.rank_routes(routes, disability_type)
+                for i, (route, score) in enumerate(ranked[:3], 1):
+                    logger.info(f"\n=== Route {i} ===")
+                    logger.info(f"Score: {score:.4f}")
+                    logger.info(f"Transfers: {route.transfers}")
+                    logger.info(f"Route: {' -> '.join(route.route)}")
+            else:
+                logger.warning("경로를 찾지 못했습니다.")
+
+        except Exception as e:
+            logger.error(f"Error: {e}", exc_info=True)
 
     # 7. 정리
     close_pool()
