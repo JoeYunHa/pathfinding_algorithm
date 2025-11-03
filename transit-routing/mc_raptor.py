@@ -20,6 +20,8 @@ class Label:
     lines: List[str] = field(default_factory=list)
     # 지나가는 역들의 line 정보를 담는 list -> 환승 여부 및 횟수 파악
     # 경로는 지나가야 하는 지하철역의 list형태
+    transfer_stations: Set[str] = field(default_factory=set)
+    # 경로 안내 시 환승역 안내를 위한 환승역 정보 저장
     created_round: int = 0
     # 해당 라벨이 생성된 라운드 저장
     # 라벨은 생성된 라운드의 다음 라운드에서 처리되어야 함
@@ -336,6 +338,11 @@ class McRAPTOR:
         is_transfer = (prev_label.lines[-1] != line) if prev_label.lines else False
         transfer_num = 1 if is_transfer else 0
 
+        # 환승역 목록 업데이트
+        new_transfer_stations = prev_label.transfer_stations.copy()
+        if is_transfer:
+            new_transfer_stations.add(to_station)
+
         return Label(
             arrival_time=prev_label.arrival_time + travel_time,
             transfers=prev_label.transfers + transfer_num,  # 환승 횟수 추가
@@ -343,6 +350,7 @@ class McRAPTOR:
             convenience_score=min(prev_label.convenience_score, convenience),
             route=prev_label.route + [to_station],
             lines=prev_label.lines + [line],  # lines(리스트임)
+            transfer_stations=new_transfer_stations,
             created_round=created_round_num,
         )  # list.append() -> return None이므로(in-place 수정 함수) append함수 쓰면 안됨
 
@@ -409,12 +417,13 @@ class McRAPTOR:
 
     def _labels_equal(self, label1: Label, label2: Label) -> bool:
         """label이 동일한지 체크"""
-        return ( # 중복체크 조건 완화
+        return (  # 중복체크 조건 완화
             # label1.arrival_time == label2.arrival_time
             # and label1.transfers == label2.transfers
             # and label1.walking_distance == label2.walking_distance
             # and label1.convenience_score == label2.convenience_score
-            label1.route == label2.route
+            label1.route
+            == label2.route
         )
 
     # def _is_different_line(self, station1: str, station2: str) -> bool

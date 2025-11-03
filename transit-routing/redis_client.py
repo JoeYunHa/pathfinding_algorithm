@@ -31,6 +31,7 @@ class RedisSessionManager:
             "current_station": route_data.get("start"),
             "destination": route_data.get("destination"),
             "route_sequence": json.dumps(route_data.get("route_sequence", [])),
+            "transfer_stations": json.dumps(route_data.get("transfer_stations", [])),
             "last_update": datetime.now().isoformat(),
         }
         return self.redis_client.setex(
@@ -43,7 +44,11 @@ class RedisSessionManager:
         data = self.redis_client.get(session_key)
         if data:
             session = json.loads(data)
-            session["route_sequence"] = json.loads(session["route_sequence"])
+            # session에 해당 필드가 없을 경우 대비
+            session["route_sequence"] = json.loads(session.get("route_sequence", "[]"))
+            session["transfer_stations"] = json.loads(
+                session.get("transfer_stations", "[]")
+            )
             return session
         return None
 
@@ -53,6 +58,7 @@ class RedisSessionManager:
             session["current_station"] = current_station
             session["last_update"] = datetime.now().isoformat()
             session["route_sequence"] = json.dumps(session["route_sequence"])
+            session["transfer_stations"] = json.dumps(session["transfer_stations"])
             self.redis_client.setex(f"session:{user_id}", 14400, json.dumps(session))
 
 

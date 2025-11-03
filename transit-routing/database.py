@@ -84,7 +84,8 @@ def get_db_cursor(cursor_factory=RealDictCursor):
 # 정보 조회 쿼리 함수들
 # 단순 정보 조회는 람다 함수로 구현해둠 => 시스템 안정성을 위해 기존 함수 남겨둠
 
-
+# 현재 전체 역 정보 조회 함수 호출이 잦은 편
+# 최적화 => 캐싱 파일로 모든 역 정보 저장해두기
 def get_all_stations(line: Optional[str] = None) -> List[Dict]:
     """해당 호선의 모든 역 정보 조회 order by station_id"""
     if line:
