@@ -15,7 +15,7 @@ DISABILITY_TYPES = {
     "PHY": "지체장애",  # 휠체어 사용자
     "VIS": "시각장애",
     "AUD": "청각장애",
-    "ELDERLY": "고령자",
+    "ELD": "고령자",
 }
 
 CRITERIA = [
