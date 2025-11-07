@@ -21,7 +21,7 @@ class ANPWeightCalculator:
     """
 
     def __init__(self):
-        self.pairwise_metrices = {
+        self.pairwise_matrices = {
             "PHY": self._get_phy_matrix(),
             "VIS": self._get_vis_matrix(),
             "AUD": self._get_aud_matrix(),
@@ -33,15 +33,15 @@ class ANPWeightCalculator:
 
     def _get_phy_matrix(self) -> np.ndarray:
         """
-        휠체어 사용자: 편의도(이진제거자) > 환승횟수 > 환승난이도 > 혼잡도 > 소요시간
+        휠체어 사용자: 환승횟수 > 환승난이도 > 편의도 > 혼잡도 > 소요시간
         """
         return np.array(
             [
-                [1, 1 / 5, 1 / 4, 1 / 7, 1 / 2],
-                [5, 1, 2, 1 / 3, 3],
-                [4, 1 / 2, 1, 1 / 5, 2],
-                [7, 3, 5, 1, 5],
-                [2, 1 / 3, 1 / 2, 1 / 5, 1],
+                [1, 1 / 7, 1 / 5, 1 / 3, 1 / 2],
+                [7, 1, 3, 5, 4],
+                [5, 1 / 3, 1, 3, 2],
+                [3, 1 / 5, 1 / 3, 1, 2],
+                [2, 1 / 4, 1 / 2, 1 / 2, 1],
             ]
         )
 
