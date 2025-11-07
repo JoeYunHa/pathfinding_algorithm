@@ -174,7 +174,7 @@ class ANPWeightCalculator:
         편의도 점수 계산
 
         Args:
-            disability_type: 장애 유형 ('PHY', 'VIS', 'AUD', 'ELDERLY')
+            disability_type: 장애 유형 ('PHY', 'VIS', 'AUD', 'ELD')
             facility_scores: 시설별 점수 딕셔너리
                            {'elevator': 3.38, 'escalator': 3.06, ...}
 
