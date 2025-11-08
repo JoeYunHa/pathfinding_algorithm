@@ -4,10 +4,14 @@ from pydantic import BaseModel
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 from contextlib import asynccontextmanager
+from dotenv import load_dotenv
 import logging
 
+# 환경변수 로드
+load_dotenv()
+
 from label import Label
-from mc_raptor import McRAPTOR
+from mc_raptor import McRaptor
 from anp_weights import ANPWeightCalculator
 from database import (
     get_all_stations,
@@ -43,6 +47,12 @@ async def lifespan(app: FastAPI):
     try:
         logger.info("서버 시작: 데이터 로딩 중...")
 
+        # database connection pool 초기화
+        from database import initialize_pool
+
+        initialize_pool()
+        logger.info("database connection pool 초기화 완료")
+
         stations = get_all_stations()
         sections = get_all_sections()
 
@@ -50,7 +60,7 @@ async def lifespan(app: FastAPI):
 
         anp_calculator = ANPWeightCalculator()
 
-        raptor_instance = McRAPTOR(
+        raptor_instance = McRaptor(
             stations=stations,
             sections=sections,
             convenience_scores={},
@@ -65,7 +75,11 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Shutdown
+    # Shutdown 전에
+    from database import close_pool
+
+    close_pool()
+    logger.info("Database connection pool 종료")
     logger.info("서버 종료")
 
 
@@ -321,7 +335,7 @@ def _create_transfer_details(
             # 역 정보 조회
             station_info = get_station_info(station_name)
 
-            # McRAPTOR 인스턴스의 메서드로 편의도 계산
+            # McRaptor 인스턴스의 메서드로 편의도 계산
             convenience_score = raptor_instance._calculate_convenience_score(
                 station_name, disability_type
             )

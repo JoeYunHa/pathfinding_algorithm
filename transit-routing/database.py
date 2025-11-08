@@ -175,7 +175,7 @@ def get_all_transfer_station_conv_scores() -> List[Dict]:
 def get_transfer_conv_score_by_code(station_cd: str) -> Optional[Dict]:
     """station_cd로 특정 역의 환승 편의도 조회"""
     query = """
-    SELECT * FORM transfer_station_convenience
+    SELECT * FROM transfer_station_convenience
     WHERE station_cd = %(station_cd)s
     """
 
@@ -325,48 +325,48 @@ def get_station_code(station_id: str) -> str:
     """station_id로 station_cd 조회"""
     query = """
     SELECT station_cd 
-    FROM stations 
-    WHERE station_id = %s
+    FROM subway_station 
+    WHERE station_id = %(station_id)s
     """
 
     try:
         with get_db_cursor() as cursor:
-            cursor.execute(query, (station_id,))
+            cursor.execute(query, {"station_id": station_id})
             result = cursor.fetchone()
-
+            
             if result:
                 return result["station_cd"]
             else:
                 logger.warning(f"역 코드 없음: {station_id}")
                 return None
-
+                
     except Exception as e:
         logger.error(f"역 코드 조회 실패: {e}")
         return None
 
+# station_num 대신 section_order을 사용해 방향 판단
+# def get_station_number(station_id: str) -> int:
+#     """station_id로 station_num 조회 => 상/하/내/외선 구분용"""
+#     query = """
+#     SELECT station_num 
+#     FROM subway_station 
+#     WHERE station_id = %s
+#     """
 
-def get_station_number(station_id: str) -> int:
-    """station_id로 station_num 조회 => 상/하/내/외선 구분용"""
-    query = """
-    SELECT station_num 
-    FROM stations 
-    WHERE station_id = %s
-    """
+#     try:
+#         with get_db_cursor() as cursor:
+#             cursor.execute(query, (station_id,))
+#             result = cursor.fetchone()
 
-    try:
-        with get_db_cursor() as cursor:
-            cursor.execute(query, (station_id,))
-            result = cursor.fetchone()
+#             if result:
+#                 return int(result["station_num"])
+#             else:
+#                 logger.warning(f"역 번호 없음: {station_id}")
+#                 return 0
 
-            if result:
-                return int(result["station_num"])
-            else:
-                logger.warning(f"역 번호 없음: {station_id}")
-                return 0
-
-    except Exception as e:
-        logger.error(f"역 번호 조회 실패: {e}")
-        return 0
+#     except Exception as e:
+#         logger.error(f"역 번호 조회 실패: {e}")
+#         return 0
 
 
 def get_station_info(station_id: str) -> Dict[str, any]:
@@ -374,23 +374,22 @@ def get_station_info(station_id: str) -> Dict[str, any]:
     역 전체 정보 조회 (한 번에 가져오기)
 
     Returns:
-        {'station_cd': str, 'station_num': int, 'station_name': str}
+        {'station_cd': str, 'station_name': str}
     """
     query = """
-    SELECT station_cd, station_num, station_name
-    FROM stations 
-    WHERE station_id = %s
+    SELECT station_cd, name as station_name
+    FROM subway_station
+    WHERE station_id = %(station_id)s
     """
 
     try:
         with get_db_cursor() as cursor:
-            cursor.execute(query, (station_id,))
+            cursor.execute(query, {"station_id": station_id})
             result = cursor.fetchone()
 
             if result:
                 return {
                     "station_cd": result["station_cd"],
-                    "station_num": int(result["station_num"]),
                     "station_name": result["station_name"],
                 }
             else:

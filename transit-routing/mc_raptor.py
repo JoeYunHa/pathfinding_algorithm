@@ -29,6 +29,9 @@ class McRaptor:
         # 역 연결 그래프 구축
         self.graph = self._build_graph()
 
+        # 섹션 순서 인덱스 구축 => 방향 결정
+        self.section_order_map = self._build_section_order_map()
+
         # 역 정보 캐시
         self.station_info_cache = {}
 
@@ -53,6 +56,25 @@ class McRaptor:
             )
 
         return graph
+
+    def _build_section_order_map(self) -> Dict:
+        """section order map 구축 (from_station, to_station, line) -> section_order"""
+        order_map = {}
+
+        for section in self.sections:
+            up_station = section["up_station_name"]
+            down_station = section["down_station_name"]
+            line = section["line"]
+            order = section["section_order"]
+
+            # 양방향 저장
+            key_up_to_down = (up_station, down_station, line)
+            key_down_to_up = (down_station, up_station, line)
+
+            order_map[key_up_to_down] = order
+            order_map[key_down_to_up] = order
+
+        return order_map
 
     def find_routes(
         self,
@@ -263,9 +285,7 @@ class McRaptor:
         # 현재 구간 혼잡도 계산
         to_info = self._get_station_info_by_name(to_station)
         from_info = self._get_station_info_by_name(from_station)
-        direction = self._determine_direction(
-            from_info.get("station_num", 0), to_info.get("station_num", 0), line
-        )
+        direction = self._determine_direction(from_station, to_station, line)
 
         current_time = self.departure_time + timedelta(minutes=prev_label.arrival_time)
         segment_congestion = self.anp_calculator.get_congestion_from_rds(
@@ -303,20 +323,14 @@ class McRaptor:
                 reachable.append(neighbor["to"])
         return reachable
 
-    def _get_station_info_cached(self, station_id: str) -> Dict:
+    def _get_station_info_cached(self, station_id: int) -> Dict:
         """역 정보 조회 (캐싱)"""
         if station_id not in self.station_info_cache:
             info = get_station_info(station_id)
             if info:
                 self.station_info_cache[station_id] = info
             else:
-                self.station_info_cache[station_id] = {
-                    "station_cd": (
-                        station_id[-4:] if len(station_id) >= 4 else station_id
-                    ),
-                    "station_num": 0,
-                    "station_name": station_id,
-                }
+                raise ValueError(f"역 정보를 찾을 수 없습니다: station_id={station_id}")
 
         return self.station_info_cache[station_id]
 
@@ -328,7 +342,6 @@ class McRaptor:
 
         return {
             "station_cd": "",
-            "station_num": 0,
             "station_name": station_name,
         }
 
@@ -371,26 +384,44 @@ class McRaptor:
         )
 
     def _determine_direction(
-        self, from_station_num: int, to_station_num: int, line_id: str
+        self, from_station: str, to_station: str, line: str
     ) -> str:
-        """방향 결정"""
-        if line_id in CIRCULAR_LINES:
-            return self._determine_circular_direction(
-                from_station_num, to_station_num, line_id
-            )
+        """
+        section_order를 이용한 방향 결정
 
-        return "up" if to_station_num > from_station_num else "down"
+        Args:
+            from_station: 출발역 이름
+            to_station: 도착역 이름
+            line: 호선
 
-    def _determine_circular_direction(
-        self, from_station_num: int, to_station_num: int, line_id: str
-    ) -> str:
-        """순환선 방향 결정"""
-        if line_id == "2":
-            # 2호선 내선/외선 로직 (간단 버전) -> 추후 내/외선 구별 방법 정확히 찾아서 수정하기
-            return "in" if to_station_num > from_station_num else "out"
+        Returns:
+            'up' | 'down' | 'in' | 'out'
+        """
+        # 섹션 정보 조회
+        key = (from_station, to_station, line)
 
-        # 기타 순환선
-        return "in" if to_station_num > from_station_num else "out"
+        if key not in self.section_order_map:
+            logger.warning(f"섹션 순서 없음: {from_station} → {to_station} ({line})")
+            return "up"  # 기본값
+
+        # sections.csv에서 up_station → down_station 방향 확인
+        for section in self.sections:
+            if (
+                section["line"] == line
+                and section["up_station_name"] == from_station
+                and section["down_station_name"] == to_station
+            ):
+                # up_station → down_station 방향
+                return "in" if line in CIRCULAR_LINES else "down"
+            elif (
+                section["line"] == line
+                and section["down_station_name"] == from_station
+                and section["up_station_name"] == to_station
+            ):
+                # down_station → up_station 방향 (역방향)
+                return "out" if line in CIRCULAR_LINES else "up"
+
+        return "up"  # 기본값
 
     def _is_pareto_optimal(
         self, new_label: Label, existing_labels: List[Label]
