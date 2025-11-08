@@ -333,40 +333,19 @@ def get_station_code(station_id: str) -> str:
         with get_db_cursor() as cursor:
             cursor.execute(query, {"station_id": station_id})
             result = cursor.fetchone()
-            
+
             if result:
                 return result["station_cd"]
             else:
                 logger.warning(f"역 코드 없음: {station_id}")
                 return None
-                
+
     except Exception as e:
         logger.error(f"역 코드 조회 실패: {e}")
         return None
 
+
 # station_num 대신 section_order을 사용해 방향 판단
-# def get_station_number(station_id: str) -> int:
-#     """station_id로 station_num 조회 => 상/하/내/외선 구분용"""
-#     query = """
-#     SELECT station_num 
-#     FROM subway_station 
-#     WHERE station_id = %s
-#     """
-
-#     try:
-#         with get_db_cursor() as cursor:
-#             cursor.execute(query, (station_id,))
-#             result = cursor.fetchone()
-
-#             if result:
-#                 return int(result["station_num"])
-#             else:
-#                 logger.warning(f"역 번호 없음: {station_id}")
-#                 return 0
-
-#     except Exception as e:
-#         logger.error(f"역 번호 조회 실패: {e}")
-#         return 0
 
 
 def get_station_info(station_id: str) -> Dict[str, any]:
@@ -417,30 +396,27 @@ def get_transfer_distance(station_cd: str, from_line: str, to_line: str) -> floa
     query = """
     SELECT distance
     FROM transfer_distance_time
-    WHERE station_cd = %s 
-      AND line_num = %s
-      AND transfer_line = %s
+    WHERE station_cd = %(station_cd)s 
+    AND line_num = %(line_num)s
+    AND transfer_line = %(to_line)s
     """
 
     try:
-        # 호선 번호 변환 (문자열 → 숫자)
-        line_num = int(from_line) if from_line.isdigit() else None
-
-        if not line_num:
-            logger.warning(f"호선 번호 변환 실패: {from_line}")
-            return DEFAULT_TRANSFER_DISTANCE
+        line_num = from_line  # 문자열 그대로
 
         with get_db_cursor() as cursor:
-            cursor.execute(query, (station_cd, line_num, to_line))
+            cursor.execute(
+                query,
+                {"station_cd": station_cd, "line_num": line_num, "to_line": to_line},
+            )
             result = cursor.fetchone()
 
             if result:
                 return float(result["distance"])
             else:
-                logger.warning(
-                    f"환승 거리 없음: {station_cd}, {from_line}→{to_line}, "
-                    f"기본값 {DEFAULT_TRANSFER_DISTANCE}m 사용"
-                )
+                # logger.warning(
+                #     f"환승 거리 없음: {station_cd}, {from_line}→{to_line}, 기본값 {DEFAULT_TRANSFER_DISTANCE}m 사용"
+                # )
                 return DEFAULT_TRANSFER_DISTANCE
 
     except Exception as e:

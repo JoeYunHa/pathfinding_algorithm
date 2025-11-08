@@ -153,7 +153,7 @@ class ANPWeightCalculator:
 
         Args:
             station_cd: 역 코드
-            line: 호선 (예: '1', '2')
+            line: 호선 (예: '1호선', '2호선')
             direction: 방향 ('up', 'down', 'in', 'out')
             departure_time: 출발 시각
 
@@ -194,10 +194,10 @@ class ANPWeightCalculator:
 
                     return normalized
                 else:
-                    logger.warning(
-                        f"혼잡도 없음: station_cd={station_cd}, line={line}, "
-                        f"direction={direction}, day_type={day_type}, time={time_column}"
-                    )
+                    # logger.warning(
+                    #     f"혼잡도 없음: station_cd={station_cd}, line={line}, "
+                    #     f"direction={direction}, day_type={day_type}, time={time_column}"
+                    # )
                     # 혼잡도 정보가 없을 시 default_value 사용 -> 혼잡도 평균
                     return CONGESTION_CONFIG["default_value"]
 
@@ -294,7 +294,7 @@ class ANPWeightCalculator:
 
         # 유효한 구간이 없으면 기본값 반환
         if valid_segment_count == 0:
-            logger.warning("유효한 혼잡도 데이터 없음, 기본값 사용")
+            # logger.warning("유효한 혼잡도 데이터 없음, 기본값 사용")
             return CONGESTION_CONFIG["default_value"]
 
         # 평균 혼잡도 반환 (0.0 ~ 1.0)
@@ -396,7 +396,7 @@ class ANPWeightCalculator:
         weights = self.get_facility_weights(disability_type)
 
         if not weights:
-            logger.warning(f"시설 가중치 없음: {disability_type}")
+            # logger.warning(f"시설 가중치 없음: {disability_type}")
             return 0.0
 
         total_score = 0.0

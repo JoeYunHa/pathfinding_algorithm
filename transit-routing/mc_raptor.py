@@ -404,7 +404,7 @@ class McRaptor:
             logger.warning(f"섹션 순서 없음: {from_station} → {to_station} ({line})")
             return "up"  # 기본값
 
-        # sections.csv에서 up_station → down_station 방향 확인
+        # sections에서 up_station → down_station 방향 확인
         for section in self.sections:
             if (
                 section["line"] == line
