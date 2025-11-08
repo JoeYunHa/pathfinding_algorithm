@@ -65,7 +65,7 @@ async def lifespan(app: FastAPI):
         convenience_scores = get_all_transfer_station_conv_scores()
 
         logger.info(
-            f"로드 완료: 역 {len(stations)}개, 구간 {len(sections)}개, 편의성 점수 {len(convenience)} 개"
+            f"로드 완료: 역 {len(stations)}개, 구간 {len(sections)}개, 편의성 점수 {len(convenience_scores)} 개"
         )
 
         # => anp_calculator 초기화 + 혼잡도 데이터 로드
