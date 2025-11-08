@@ -423,7 +423,7 @@ class McRaptor:
         return self._convenience_cache[cache_key]
 
     def _determine_direction(
-    self, from_station: str, to_station: str, line: str
+    self, from_station_cd: str, to_station_cd: str, line: str
     ) -> str:
         """
         section_order를 이용한 방향 결정 <- 맵 조회 최적화 적용
