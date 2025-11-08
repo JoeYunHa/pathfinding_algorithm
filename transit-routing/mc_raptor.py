@@ -35,6 +35,12 @@ class McRaptor:
         # 역 정보 캐시
         self.station_info_cache = {}
 
+        # 최적화를 위해 신규 캐시 추가
+        self._transfer_distance_cache = {}
+        self._congestion_cache = {}
+        self._convenience_cache = {}
+        self._facility_scores_cache = {}
+
         # 현재 탐색 중인 장애 유형 및 출발 시각
         self.disability_type = None
         self.departure_time = None
@@ -225,6 +231,7 @@ class McRaptor:
 
         return scored_routes
 
+    # 캐싱 적용하여 수정
     def _create_new_label(
         self,
         prev_label: Label,
@@ -234,7 +241,7 @@ class McRaptor:
         created_round_num: int,
     ) -> Label:
         """새로운 라벨 생성"""
-        # 이동 시간 (MVP: 2분 고정)
+        # 지하철 역간 이동 시간 (MVP: 2분 고정) 
         travel_time = 2.0
 
         # 환승 여부 확인
@@ -247,15 +254,15 @@ class McRaptor:
         if is_transfer:  # 환승이 발생할 때에만 계산!!!
             from_info = self._get_station_info_by_name(from_station)
 
-            # 환승 거리 조회
-            transfer_distance = get_transfer_distance(
+            # 환승 거리 조회 <- 캐싱 적용
+            transfer_distance = self._get_transfer_distance_cached(
                 from_info.get("station_cd", ""),
                 prev_label.lines[-1],
                 line,
             )
 
-            # 환승역 시설 점수 조회
-            facility_scores = self._get_facility_scores(from_station)
+            # 환승역 시설 점수 조회 <- 캐싱 적용
+            facility_scores = self.self._get_facility_scores_cached(from_station)
 
             # 환승 난이도 계산
             transfer_difficulty_delta = (
@@ -276,8 +283,8 @@ class McRaptor:
                 f"시간={transfer_time:.1f}초"
             )
 
-        # 도착역 편의도 계산
-        new_convenience = self._calculate_convenience_score(to_station)
+        # 도착역 편의도 계산 <- 캐싱 적용
+        new_convenience = self._calculate_convenience_score_cached(to_station)
         avg_convenience = (
             prev_label.convenience_score * len(prev_label.route) + new_convenience
         ) / (len(prev_label.route) + 1)
@@ -288,7 +295,8 @@ class McRaptor:
         direction = self._determine_direction(from_station, to_station, line)
 
         current_time = self.departure_time + timedelta(minutes=prev_label.arrival_time)
-        segment_congestion = self.anp_calculator.get_congestion_from_rds(
+        # 캐싱 적용
+        segment_congestion = self._get_congestion_cached(
             to_info.get("station_cd", ""), line, direction, current_time
         )
 
@@ -431,3 +439,72 @@ class McRaptor:
             if existing.dominates(new_label):
                 return False
         return True
+    
+    # 최적화를 위한 캐싱 메서드 추가
+    def _get_transfer_distance_cached(
+        self, station_cd: str, from_line: str, to_line: str
+    ) -> float:
+        """환승 거리 조회 (캐싱)"""
+        cache_key = (station_cd, from_line, to_line)
+        
+        if cache_key not in self._transfer_distance_cache:
+            distance = get_transfer_distance(station_cd, from_line, to_line)
+            self._transfer_distance_cache[cache_key] = distance
+            logger.debug(f"캐시 미스: 환승거리 {station_cd} {from_line}→{to_line} = {distance}m")
+        else:
+            logger.debug(f"캐시 히트: 환승거리 {cache_key}")
+        
+        return self._transfer_distance_cache[cache_key]
+
+    def _get_congestion_cached(
+        self, station_cd: str, line: str, direction: str, current_time: datetime
+    ) -> float:
+        """혼잡도 조회 (캐싱) - 시간은 시간대로만 캐싱"""
+        # 분 단위 무시하고 시간대만 사용 -> 캐싱 성능을 확인하면서 추후 조정하기
+        time_key = current_time.replace(minute=0, second=0, microsecond=0)
+        cache_key = (station_cd, line, direction, time_key)
+        
+        if cache_key not in self._congestion_cache:
+            congestion = self.anp_calculator.get_congestion_from_rds(
+                station_cd, line, direction, current_time
+            )
+            self._congestion_cache[cache_key] = congestion
+            logger.debug(f"캐시 미스: 혼잡도 {station_cd} {line} {direction} = {congestion}")
+        else:
+            logger.debug(f"캐시 히트: 혼잡도 {cache_key}")
+        
+        return self._congestion_cache[cache_key]
+    
+    def _get_facility_scores_cached(self, station_name: str) -> Dict[str, float]:
+        """역의 시설별 편의도 점수 조회 (캐싱)"""
+        cache_key = (station_name, self.disability_type)
+        
+        if cache_key not in self._facility_scores_cache:
+            scores = self._get_facility_scores(station_name)  # 기존 메서드 호출
+            self._facility_scores_cache[cache_key] = scores
+            logger.debug(f"캐시 미스: 편의시설 {station_name}")
+        else:
+            logger.debug(f"캐시 히트: 편의시설 {cache_key}")
+        
+        return self._facility_scores_cache[cache_key]
+    
+    def _calculate_convenience_score_cached(self, station_name: str) -> float:
+        """역 편의성 점수 계산 (캐싱)"""
+        cache_key = (station_name, self.disability_type)
+        
+        if cache_key not in self._convenience_cache:
+            facility_scores = self._get_facility_scores_cached(station_name)
+            
+            if not facility_scores:
+                score = 2.5  # 기본값
+            else:
+                score = self.anp_calculator.calculate_convenience_score(
+                    self.disability_type, facility_scores
+                )
+            
+            self._convenience_cache[cache_key] = score
+            logger.debug(f"캐시 미스: 편의도 {station_name} = {score}")
+        else:
+            logger.debug(f"캐시 히트: 편의도 {cache_key}")
+        
+        return self._convenience_cache[cache_key]
