@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 class ANPWeightCalculator:
     """
     기준 변경 및 추가한 ANP 가중치 계산기
+    최적화 -> 혼잡도 정보 사전 로딩 적용
 
     기준:
     소요시간(환승 시 이동시간 포함, 환승역 별 환승 거리 / 유형별 보행속도)
@@ -30,6 +31,12 @@ class ANPWeightCalculator:
 
         # caching
         self._facility_preferences_cache: Optional[Dict[str, Dict[str, float]]] = None
+
+        # 서버 시작 시 모든 혼잡도 데이터를 메모리에 로드
+        self.congestion_data = self._load_all_congestion_from_db()
+        logger.info(
+            f"ANP: 전체 혼잡도 데이터 {len(self.congestion_data)}개 키 로드 완료"
+        )
 
     def _get_phy_matrix(self) -> np.ndarray:
         """
@@ -145,11 +152,51 @@ class ANPWeightCalculator:
         walking_speed = WALKING_SPEED.get(disability_type, 1.0)
         return transfer_distance / walking_speed
 
+    # 혼잡도 사전 적재를 위한 함수 추가
+    def _load_all_congestion_from_db(self) -> Dict:
+        """서버 시작 시 DB에서 모든 혼잡도 데이터를 로드 + 정규화"""
+        query = """
+        SELECT * FROM subway_congestion
+        """
+        data = {}
+        # 30분 단위 time_columns 생성
+        time_columns = [f"t_{i}" for i in range(0, 24 * 60, 30)]
+
+        try:
+            with get_db_cursor() as cursor:
+                cursor.execute(query)
+                rows = cursor.fetchall()
+
+                for row in rows:
+                    # (station_cd, line, direction, day_type) <- key로 사용
+                    # 현재 중복 하나 존재 -> 처리하기
+                    key = (
+                        row["station_cd"],
+                        row["line"],
+                        row["direction"],
+                        row["day_type"],
+                    )
+                    time_data = {}
+                    for col in time_columns:
+                        congestion_percent = row.get(col)
+                        if congestion_percent is not None:
+                            # 로드 시점에 미리 정규화
+                            time_data[col] = float(congestion_percent) / 100.0
+
+                    if time_data:  # data가 있는 경우에만 추가
+                        data[key] = time_data
+
+            return data
+        except Exception as e:
+            logger.error(f"혼잡도 데이터 사전 로드 실패: {e}")
+            return {}
+
     def get_congestion_from_rds(
         self, station_cd: str, line: str, direction: str, departure_time: datetime
     ) -> float:
         """
-        RDS에서 실제 혼잡도 조회
+        최적화 <- rds 조회에서 방법 변경
+        사전 적재한 혼잡도 데이터 조회
 
         Args:
             station_cd: 역 코드
@@ -171,39 +218,18 @@ class ANPWeightCalculator:
         day_type = self._get_day_type(departure_time)
         time_column = self._get_time_column(departure_time)
 
-        query = f"""
-        SELECT {time_column} as congestion_level
-        FROM subway_congestion
-        WHERE station_cd = %s 
-          AND line = %s
-          AND direction = %s
-          AND day_type = %s
-        """
+        # key로 시간대별 혼잡도 딕셔너리 조회
+        route_congestion_data = self.congestion_data.get(
+            (station_cd, line, direction, day_type), {}
+        )
+        # route_congestion_data <- 해당 역, 노선, 방향의 모든 시간대의 혼잡도
 
-        try:
-            with get_db_cursor() as cursor:
-                cursor.execute(query, (station_cd, line, direction, day_type))
-                result = cursor.fetchone()
+        # 해당 시간대의 혼잡도 값을 조회 => 없으면 기본 값 사용
+        congestion_normalized = route_congestion_data.get(
+            time_column, CONGESTION_CONFIG["default_value"]
+        )
 
-                if result and result["congestion_level"] is not None:
-                    # time_colemn <- congetsion_level 별칭 사용
-                    congestion_percent = float(result["congestion_level"])
-                    # % 값을 0.0 ~ 1.0+ 범위로 정규화
-                    # 100% -> 1.0
-                    normalized = congestion_percent / 100.0
-
-                    return normalized
-                else:
-                    # logger.warning(
-                    #     f"혼잡도 없음: station_cd={station_cd}, line={line}, "
-                    #     f"direction={direction}, day_type={day_type}, time={time_column}"
-                    # )
-                    # 혼잡도 정보가 없을 시 default_value 사용 -> 혼잡도 평균
-                    return CONGESTION_CONFIG["default_value"]
-
-        except Exception as e:
-            logger.error(f"혼잡도 조회 실패: {e}")
-            return CONGESTION_CONFIG["default_value"]
+        return congestion_normalized
 
     def _get_day_type(self, dt: datetime) -> str:
         """요일 타입 반환"""
@@ -247,7 +273,9 @@ class ANPWeightCalculator:
         )
         inconvenience_score = 1.0 - (convenience_score / 5.0)
 
-        difficulty = 0.4 * distance_score + 0.6 * inconvenience_score
+        # 난이도 계산 시 6:4 = distance_score : inconvenience_score
+        # 테스트하면서 조정하기
+        difficulty = 0.6 * distance_score + 0.4 * inconvenience_score
 
         return difficulty
 
@@ -300,10 +328,10 @@ class ANPWeightCalculator:
         # 평균 혼잡도 반환 (0.0 ~ 1.0)
         avg_congestion = total_congestion / valid_segment_count
 
-        logger.debug(
-            f"경로 혼잡도: 평균={avg_congestion:.2f}, "
-            f"구간수={valid_segment_count}, 총합={total_congestion:.2f}"
-        )
+        # logger.debug(
+        #     f"경로 혼잡도: 평균={avg_congestion:.2f}, "
+        #     f"구간수={valid_segment_count}, 총합={total_congestion:.2f}"
+        # )
 
         return avg_congestion
 
