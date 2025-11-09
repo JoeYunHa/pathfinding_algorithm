@@ -173,7 +173,8 @@ class McRaptor:
         self.disability_type = disability_type
         self.departure_time = departure_time
 
-        # 메모리 누수 방지를 위해 요청별 캐시 초기화
+        # 메모리 누수 방지를 위해 요청별 캐시 초기화 <- 운영 상황에서 중요한 문제
+        # 무작정 쌓이면 안됨
         self._transfer_distance_cache.clear()
         self._convenience_cache.clear()
         self._facility_scores_cache.clear()
@@ -185,12 +186,12 @@ class McRaptor:
         origin_cds = self.station_name_to_cds.get(origin, [])
         destination_cds = self.station_name_to_cds.get(destination, [])
 
-        # 출발/도착역 확인 로그 추가
-        logger.info(f"출발역: {origin} -> 코드: {origin_cds}")
-        logger.info(f"도착역: {destination} -> 코드: {destination_cds}")
-        logger.info(
-            f"출발역 그래프 연결: {[len(self.graph.get(cd, [])) for cd in origin_cds]}"
-        )
+        # # 출발/도착역 확인 로그 추가
+        # logger.info(f"출발역: {origin} -> 코드: {origin_cds}")
+        # logger.info(f"도착역: {destination} -> 코드: {destination_cds}")
+        # logger.info(
+        #     f"출발역 그래프 연결: {[len(self.graph.get(cd, [])) for cd in origin_cds]}"
+        # )
 
         if not origin_cds:
             raise ValueError(f"출발역 {origin}을 찾을 수 없습니다.")
@@ -217,9 +218,13 @@ class McRaptor:
             initial_label = Label(
                 arrival_time=0.0,
                 transfers=0,
-                transfer_difficulty=0.0,
-                convenience_score=origin_convenience,
-                congestion_score=initial_congestion,
+                # transfer_difficulty=0.0,
+                # convenience_score=origin_convenience,
+                # congestion_score=initial_congestion,
+                # !!! 수정 누적합(평균), 리스트(최악) 사용 !!!
+                transfer_difficulty_list=[],
+                congestion_sum=initial_congestion,
+                convenience_sum=origin_convenience,
                 route=[origin_cd],
                 lines=[origin_line],
                 created_round=0,
@@ -413,7 +418,7 @@ class McRaptor:
         created_round_num: int,
         cumulative_travel_time: float,  # 누적 시간 인자 추가
     ) -> Label:
-        """새로운 라벨 생성"""
+        """새로운 라벨 생성 <- 누적합 적용!!!"""
 
         # 환승 여부 확인
         is_transfer = (prev_label.lines[-1] != line) if prev_label.lines else False
@@ -435,7 +440,7 @@ class McRaptor:
             # 환승역 시설 점수 조회 <- 캐싱 적용
             facility_scores = self._get_facility_scores_cached(from_station_cd)
 
-            # 환승 난이도 계산
+            # 환승 난이도 계산 -> 추후 새로운 라벨의 환승 난이도 리스트에 추가
             transfer_difficulty_delta = (
                 self.anp_calculator.calculate_transfer_difficulty(
                     transfer_distance, facility_scores, self.disability_type
@@ -457,38 +462,26 @@ class McRaptor:
             #     f"시간={transfer_time:.1f}초"
             # )
 
-        # 도착역 편의도 계산 <- 캐싱 적용
+        # 누적합 계산 로직으로 변경
+        # 도착역의 개별 편의도 점수
         new_convenience = self._calculate_convenience_score_cached(to_station_cd)
-        # 2분 당 1개 역으로 가정하여 새 경로의 총 역 개수를 근사치로 계산
-        # 환승 시, 탑승역이 prev_label.route에 이미 포함되어 있으므로 -1
-        base_route_len = len(prev_label.route)
-        added_stops_approx = cumulative_travel_time / 2.0
-        new_route_len_approx = (
-            (base_route_len - 1) + added_stops_approx + 1.0
-        )  # (기존 경로 - 1) + (추가 경로) + (현재 역)
-        if new_route_len_approx < 1.0:
-            new_route_len_approx = 1.0
+        # 위의 것을 합산한 새로운 편의도 누적합
+        new_convenience_sum = prev_label.convenience_sum + new_convenience
 
-        avg_convenience = (
-            # (len(prev_label.route) - 1) => base_route_len
-            (prev_label.convenience_score * base_route_len)
-            + new_convenience
-        ) / new_route_len_approx
-
-        # 직전 역을 기준으로 방향 계산
+        # 도착역 개별 혼잡도
         direction = self._determine_direction(prev_stop_cd, to_station_cd, line)
-
         current_time = self.departure_time + timedelta(minutes=prev_label.arrival_time)
-
-        # 메모리 캐시를 조회하는 anp_calculator의 get_congestion_from_rds 사용
         segment_congestion = self.anp_calculator.get_congestion_from_rds(
             to_station_cd, line, direction, current_time
         )
-        avg_congestion = (
-            # (len(prev_label.route) + 1) => new_route_len_approx
-            (prev_label.congestion_score * base_route_len)
-            + segment_congestion
-        ) / new_route_len_approx
+
+        # 새로운 혼잡도 누적합
+        new_congestion_sum = prev_label.congestion_sum + segment_congestion
+
+        # 환승 난이도 역시 새로운 환승역의 난이도를 리스트 복사 후 추가
+        new_transfer_difficulty_list = prev_label.transfer_difficulty_list.copy()
+        if is_transfer:
+            new_transfer_difficulty_list.append(transfer_difficulty_delta)
 
         # transfer_context 리스트를 복사하고 새로운 환승 정보 추가
         new_transfer_context = prev_label.transfer_context.copy()
@@ -500,10 +493,9 @@ class McRaptor:
             + cumulative_travel_time
             + transfer_time,
             transfers=prev_label.transfers + (1 if is_transfer else 0),
-            transfer_difficulty=prev_label.transfer_difficulty
-            + transfer_difficulty_delta,
-            convenience_score=avg_convenience,
-            congestion_score=avg_congestion,
+            transfer_difficulty_list=new_transfer_difficulty_list,
+            convenience_sum=new_convenience_sum,
+            congestion_sum=new_congestion_sum,
             # 경로 수정 => 병렬 방식에서는 탑승역 경로 + 도착역만 저장
             route=prev_label.route + [to_station_cd],
             lines=prev_label.lines + [line],

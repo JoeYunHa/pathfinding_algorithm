@@ -15,8 +15,8 @@ class Label:
     # 중요!!! -> 환승 난이도는 평균보다 가장 난이도가 높은 것을 비교하는 게 더 중요, 합리적
     # 환승역들의 난이도를 list로 저장
     transfer_difficulty_list: List[float] = field(default_factory=list)
-    convenience_score: float  # 편의도 누적합!!!
-    congestion_score: float  # 혼잡도 누적합!!!
+    convenience_sum: float  # 편의도 누적합!!!
+    congestion_sum: float  # 혼잡도 누적합!!!
     route: List[str] = field(
         default_factory=list
     )  # 경로를 지나가는 역의 정보 station_cd
@@ -39,7 +39,7 @@ class Label:
     @property
     def avg_congestion(self) -> float:
         """평균 혼잡도 <- 평가 시에만 사용"""
-        return self.congetsion_sum / self.route_length
+        return self.congestion_sum / self.route_length
 
     @property
     def max_transfer_difficulty(self) -> float:
