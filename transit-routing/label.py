@@ -5,6 +5,9 @@ from dataclasses import dataclass, field
 # label class와 mc_raptor 분리
 # @property annotation 사용 <- 메서드를 변수처럼 접근, 캡슐화, 내부 데이터를 노출하지 않고 계산한 값을 노출할 수 있음
 # like C++ getter
+
+
+# @dataclass => 기본값이 있는 필드 뒤에는 반드시 기본값이 있는 필드만 와야 함!!!
 @dataclass
 class Label:
     """경로 라벨 (파레토 최적해) <- 누적 합 방식 적용"""
@@ -12,11 +15,11 @@ class Label:
     arrival_time: float  # 총 소요시간 (분)
     transfers: int  # 환승 횟수
     # 누적합으로 변경!!!
+    convenience_sum: float  # 편의도 누적합!!!
+    congestion_sum: float  # 혼잡도 누적합!!!
     # 중요!!! -> 환승 난이도는 평균보다 가장 난이도가 높은 것을 비교하는 게 더 중요, 합리적
     # 환승역들의 난이도를 list로 저장
     transfer_difficulty_list: List[float] = field(default_factory=list)
-    convenience_sum: float  # 편의도 누적합!!!
-    congestion_sum: float  # 혼잡도 누적합!!!
     route: List[str] = field(
         default_factory=list
     )  # 경로를 지나가는 역의 정보 station_cd
@@ -110,7 +113,7 @@ class Label:
         norm_difficulty = self.max_transfer_difficulty
 
         # 편의도: 5점 만점을 0-1로 변환 (높을수록 좋으므로 역변환)
-        norm_convenience = 1.0 - (self.convenience_score / 5.0)
+        norm_convenience = 1.0 - (self.avg_convenience / 5.0)
 
         # 혼잡도: 이미 0-1 범위
         norm_congestion = min(self.congestion_score, 1.0)
