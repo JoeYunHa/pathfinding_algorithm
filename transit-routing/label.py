@@ -51,36 +51,52 @@ class Label:
         파레토 우위 판단 (5개 기준)
         - 환승 난이도는 최악값으로 비교
         - 나머지는 평균으로 비교
+        - 임계값을 적용한 지배 관계 판단 <- 거의 동일한 라벨이 계속해서 생성되는 것을 방지
         Returns:
             True if self가 other를 지배함
         """
-        better_in_one = False
 
-        criteria = [
-            (self.arrival_time, other.arrival_time, False),  # 최소화
-            (self.transfers, other.transfers, False),  # 최소화
-            (
-                self.max_transfer_difficulty,
-                other.max_transfer_difficulty,
-                False,
-            ),  # 최댓값 역시 낮을 수록 좋음
-            (self.avg_convenience, other.avg_convenience, True),  # 최대화
-            (self.avg_congestion, other.avg_congestion, False),  # 최소화
-        ]
+        # 임계값 정의
+        # 추후 테스트하면서 조정하기
+        TIME_EPSILON = 1.0  # 1분 이내 시간 차이 => 동일하다고 판단
+        SCORE_EPSILON = 0.1  # 0.1점 이내의 점수 차이 => 동일하다고 판단
 
-        for self_val, other_val, maximize in criteria:
-            if maximize:  # 최대화
-                if self_val < other_val:
-                    return False
-                elif self_val > other_val:
-                    better_in_one = True
-            else:  # 최소화
-                if self_val > other_val:
-                    return False
-                elif self_val < other_val:
-                    better_in_one = True
+        # better or equal 확인
 
-        return better_in_one
+        # 최소화해야 하는 기준-소요시간,환승횟수,환승 난이도,혼잡도
+        time_be = (self.arrival_time - other.arrival_time) < TIME_EPSILON
+        transfers_be = (
+            self.transfers <= other.transfers
+        )  # 횟수는 정수이고 숫자간 차이가 매우 유효하므로 임계값 적용X
+        max_diff_be = (
+            self.max_transfer_difficulty - other.max_transfer_difficulty
+        ) < SCORE_EPSILON
+        avg_cong_be = (self.avg_congestion - other.avg_congestion) < SCORE_EPSILON
+
+        # 최대화해야 하는 기준-편의도
+        avg_conv_be = self.avg_convenience - other.avg_convenience > -SCORE_EPSILON
+
+        better_or_equal = (
+            time_be and transfers_be and max_diff_be and avg_cong_be and avg_conv_be
+        )
+
+        # strictly better 확인
+        # 최소화 기준
+        time_sb = (other.arrival_time - self.arrival_time) > TIME_EPSILON
+        transfers_sb = self.transfers < other.transfers
+        max_diff_sb = (
+            other.max_transfer_difficulty - self.max_transfer_difficulty
+        ) > SCORE_EPSILON
+        avg_cong_sb = (other.avg_congestion - self.avg_congestion) > SCORE_EPSILON
+
+        # 최대화 기준
+        avg_conv_sb = (self.avg_convenience - other.avg_convenience) > SCORE_EPSILON
+
+        strictly_better = (
+            time_sb or transfers_sb or max_diff_sb or avg_conv_sb or avg_cong_sb
+        )
+
+        return better_or_equal and strictly_better
 
     def calculate_weighted_score(self, anp_weights: Dict[str, float]) -> float:
         """
