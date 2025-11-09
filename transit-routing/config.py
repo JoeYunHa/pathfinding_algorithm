@@ -32,9 +32,9 @@ CRITERIA = [
 # 혼잡도 조회를 위한 상/하선 구별에서 순환노선의 경우 내/외선을 사용함
 # 순환선 정의
 CIRCULAR_LINES = {
-    "2": "circular",
-    "bundang": "circular",
-    "gyeongui_jungang": "circular",
+    "2호선": "circular",
+    "분당선": "circular",
+    "경의중앙선": "circular",
 }
 
 # 혼잡도 관련 설정

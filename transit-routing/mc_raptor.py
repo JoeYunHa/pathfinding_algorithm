@@ -5,7 +5,7 @@ import logging
 
 from label import Label
 from anp_weights import ANPWeightCalculator
-from database import get_transfer_distance # get_station_info 직접 사용하지 않도록 수정
+from database import get_transfer_distance  # get_station_info 직접 사용하지 않도록 수정
 from config import CIRCULAR_LINES
 
 logger = logging.getLogger(__name__)
@@ -30,23 +30,25 @@ class McRaptor:
         # 초기화 성능 최적화
         # 그래프 구성에 사용할 사전 연산 맵
         # (name,line) -> station_cd 맵
-        self.name_line_to_cd: Dict[Tuple[str,str], str] = {
+        self.name_line_to_cd: Dict[Tuple[str, str], str] = {
             (s["name"], s["line"]): s["station_cd"] for s in self.stations.values()
         }
         # (name) -> [station_cd list] map
         self.station_name_to_cds: Dict[str, List[str]] = defaultdict(list)
         for s in self.stations.values():
-            self.station_name_to_cds[s["name"]].append(s["station_cd"]) 
+            self.station_name_to_cds[s["name"]].append(s["station_cd"])
 
         # 역 연결 그래프 구축 <- 사전 연산 맵 사용
         self.graph = self._build_graph()
 
         # 섹션 순서 인덱스 구축 => 방향 결정 <- 사전 연산 맵 사용
-        self.section_order_map = self._build_section_order_map()
+        self.station_order_map = self._build_station_order_map()
 
         # station_cd, line -> 인접 역에 대해 방향 역 리스트 맵
         self.line_stations_map = self._build_line_stations_map()
-        logger.info(f"McRaptor: 방향성 노선 맵 {len(self.line_stations_map)} 개 구축 완료")
+        logger.info(
+            f"McRaptor: 방향성 노선 맵 {len(self.line_stations_map)} 개 구축 완료"
+        )
 
         # 최적화를 위해 신규 캐시 추가
         self._transfer_distance_cache = {}
@@ -72,11 +74,18 @@ class McRaptor:
             down_cd = self.name_line_to_cd.get((down_name, line))
 
             if not up_cd or not down_cd:
-                logger.warning(f"graph build: {section["section_id"]}의 역 code 없음: {up_name}, {down_name}")
+                section_id = section["section_id"]
+                logger.warning(
+                    f"graph build: {section_id}의 역 code 없음: {up_name}, {down_name}"
+                )
                 continue
 
-            graph[up_cd].append({"to": down_cd, "line": line, "order": section["section_order"]})
-            graph[down_cd].append({"to": up_cd, "line": line, "order": section["section_order"]})
+            graph[up_cd].append(
+                {"to": down_cd, "line": line, "order": section["section_order"]}
+            )
+            graph[down_cd].append(
+                {"to": up_cd, "line": line, "order": section["section_order"]}
+            )
 
         return graph
 
@@ -87,8 +96,8 @@ class McRaptor:
             line = section["line"]
 
             # 순회 대신 사전 연산 맵에서 바로 조회
-            up_cd = self.name_line_to_cd((section["up_station_name"], line))
-            down_cd = self.name_line_to_cd((section["down_station_name"], line))
+            up_cd = self.name_line_to_cd.get((section["up_station_name"], line))
+            down_cd = self.name_line_to_cd.get((section["down_station_name"], line))
 
             if not up_cd or not down_cd:
                 continue
@@ -98,7 +107,7 @@ class McRaptor:
             order_map[(down_cd, line)] = order + 1
 
         return order_map
-    
+
     # station_cd가 방향과 관련이 있는 것이 맞는지 확인하기
     def _build_line_stations_map(self) -> Dict[Tuple[str, str], Dict[str, List[str]]]:
         """
@@ -111,7 +120,7 @@ class McRaptor:
         line_station_orders: Dict[str, Dict[str, int]] = defaultdict(dict)
         for (station_cd, line), order in self.station_order_map.items():
             line_station_orders[line][station_cd] = order
-        
+
         for line, stations_orders in line_station_orders.items():
             # order(x[1]) 기준으로 정렬
             sorted_stations = sorted(stations_orders.items(), key=lambda x: x[1])
@@ -122,14 +131,18 @@ class McRaptor:
         for line, ordered_stations in line_to_stations_ordered.items():
             for i, station_cd in enumerate(ordered_stations):
                 up_stations = ordered_stations[:i][::-1]  # 0부터 i-1까지 (역순)
-                down_stations = ordered_stations[i+1:]  # i+1부터 끝까지
+                down_stations = ordered_stations[i + 1 :]  # i+1부터 끝까지
 
                 is_circular = line in CIRCULAR_LINES
                 line_map[(station_cd, line)] = {
                     "up": up_stations,
                     "down": down_stations,
-                    "in": down_stations if is_circular else [], # 순환선 'in'을 'down'으로 매핑
-                    "out": up_stations if is_circular else [], # 순환선 'out'을 'up'으로 매핑
+                    "in": (
+                        down_stations if is_circular else []
+                    ),  # 순환선 'in'을 'down'으로 매핑
+                    "out": (
+                        up_stations if is_circular else []
+                    ),  # 순환선 'out'을 'up'으로 매핑
                 }
         return line_map
 
@@ -160,12 +173,24 @@ class McRaptor:
         self.disability_type = disability_type
         self.departure_time = departure_time
 
+        # 메모리 누수 방지를 위해 요청별 캐시 초기화
+        self._transfer_distance_cache.clear()
+        self._convenience_cache.clear()
+        self._facility_scores_cache.clear()
+
         # 파레토 프론티어
         labels = defaultdict(list)
 
         # 순회 대신 맵 조회
         origin_cds = self.station_name_to_cds.get(origin, [])
         destination_cds = self.station_name_to_cds.get(destination, [])
+
+        # 출발/도착역 확인 로그 추가
+        logger.info(f"출발역: {origin} -> 코드: {origin_cds}")
+        logger.info(f"도착역: {destination} -> 코드: {destination_cds}")
+        logger.info(
+            f"출발역 그래프 연결: {[len(self.graph.get(cd, [])) for cd in origin_cds]}"
+        )
 
         if not origin_cds:
             raise ValueError(f"출발역 {origin}을 찾을 수 없습니다.")
@@ -200,67 +225,154 @@ class McRaptor:
                 created_round=0,
             )
             labels[origin_cd].append(initial_label)
-            
+
             # 출발역 마킹
             Q.add(origin_cd)
 
         # Round별 탐색
         for round_num in range(1, max_rounds + 1):
             logger.info(f"=== Round {round_num}: 마킹 {len(Q)}개 시작 ===")
+            logger.info(f"현재 전체 라벨 수: {sum(len(v) for v in labels.values())}개")
             Q_next_round = set()
 
             # Marking된 역만 탐색
             for station_cd in Q:
                 station_labels = labels[station_cd]
                 # 이전 라운드까지 생성된 라벨만 탐색
-                to_explore_labels = [l for l in station_labels if l.created_round < round_num]
+                to_explore_labels = [
+                    l for l in station_labels if l.created_round < round_num
+                ]
                 if not to_explore_labels:
                     continue
+
+                logger.debug(f"역 {station_cd}: 탐색 라벨 {len(to_explore_labels)}개")
 
                 for label in to_explore_labels:
                     current_line = label.lines[-1] if label.lines else None
 
-                    # 현재 역에서 이용 가능한 모든 호선
-                    available_lines = {neighbor["line"] for neighbor in self.graph.get(station_cd, [])}
+                    # 환승 로직 수정
+                    # 현재 station_cd의 이름 찾기
+                    current_station_name = self.get_station_name_from_cd(station_cd)
 
-                    for line in available_lines:
-                        is_transfer = (line != current_line)
+                    # 해당 이름을 갖고 있는 모든 station_cd 찾음 => 같은 역이라도 노선이 다르면 station_cd가 다름
+                    all_cds_at_station = self.station_name_to_cds.get(
+                        current_station_name, []
+                    )
+
+                    # 위에서 찾은 모든 station_cd를 활용해 노선 정보 생성
+                    available_lines_info = {
+                        self.get_station_info_from_cd(cd).get("line"): cd
+                        for cd in all_cds_at_station
+                        if self.get_station_info_from_cd(cd)  # 방어 코드
+                    }
+
+                    if not available_lines_info:
+                        logger.debug(f"역 {station_cd}: 이용 가능한 호선 없음")
+                        continue
+
+                    # 수정된 맵 순환 => 양방향을 동시에 탐색 => 심각한 논리적 오류
+                    # 양방향 탐색 오류 수정
+                    for line, line_start_cd in available_lines_info.items():
+                        is_transfer = line != current_line
                         # 환승 횟수 제한
                         if label.transfers + (1 if is_transfer else 0) > round_num:
                             continue
 
-                        # 방향별 역 리스트 가져오기
-                        directions_map = self._get_stations_on_line(station_cd, line)
+                        directions_map = self._get_stations_on_line(line_start_cd, line)
 
-                        directions_to_explore = []
-                        if line in CIRCULAR_LINES:
-                            directions_to_explore.extend(directions_map.get("in", []))
-                            directions_to_explore.extend(directions_map.get("out", []))
+                        # 탐색할 방향 키 리스트 정의
+                        direction_keys = []
+                        if is_transfer:
+                            # 환승 시 : 양방향 모두 탐색
+                            if line in CIRCULAR_LINES:
+                                direction_keys = ["in", "out"]
+                            else:
+                                direction_keys = ["up", "down"]
                         else:
-                            directions_to_explore.extend(directions_map.get("up", []))
-                            directions_to_explore.extend(directions_map.get("down", []))
+                            # 환승이 아닐 경우 현재 라벨의 방향을 판별
+                            if len(label.route) < 2:
+                                # 이론상 발생하지 않는 경우이지만 예방 차원에서 양방향 처리 보장
+                                direction_keys = (
+                                    ["up", "down"]
+                                    if line not in CIRCULAR_LINES
+                                    else ["in", "out"]
+                                )
+                            else:
+                                # 직전 역과 현재 역으로 방향을 결정
+                                from_cd = label.route[-2]
+                                to_cd = label.route[-1]
 
-                        # 양방향 탐색 버그 수정
-                        for next_station_cd in directions_to_explore:
-                            new_label = self._create_new_label(
-                                label, station_cd, next_station_cd, line, round_num
+                                current_direction = self._determine_direction(
+                                    from_cd, to_cd, line
+                                )
+
+                                direction_keys = [current_direction]
+
+                        # 상반되는 방향을 별도로 순회
+                        for direction in direction_keys:
+                            # 해당 방향의 역 리스트만 가져옴 => 합치지 않도록 주의!
+                            directions_to_explore = directions_map.get(direction, [])
+
+                            # # 순차적으로 탐색 진행 => 순차 탐색 폐기
+                            # 병렬 누적 시간 방식 사용
+                            cumulative_travel_time = 0.0
+
+                            # 직전 역 station_cd 추적 <- 방향 결정
+                            previous_station_cd = (
+                                line_start_cd if is_transfer else station_cd
                             )
 
-                            existing_labels = labels[next_station_cd]
-                            new_frontier, updated = self._update_pareto_frontier(new_label, existing_labels)
+                            # 해당 단일 방향으로만
+                            for next_station_cd in directions_to_explore:
+                                # 중요!!!
+                                # U턴 및 무한 루프 방지 로직 추가
+                                # 생성할 라벨의 다음 역이 이전 경로에 이미 포함되어 있다면 건너뜀
+                                if next_station_cd in label.route:
+                                    continue
 
-                            if updated:
-                                labels[next_station_cd] = new_frontier
-                                # 새로운 라벨이 추가될 때에만 마킹
-                                Q_next_round.add(next_station_cd)
+                                segment_travel_time = (
+                                    2.0  # MVP 버전 임시 역간 이동 시간 2.0
+                                )
+                                cumulative_travel_time += segment_travel_time
+
+                                # 환승/탑승이 일어난 역의 station_cd
+                                start_cd_for_label = (
+                                    line_start_cd if is_transfer else station_cd
+                                )
+
+                                # !!!!!!!병렬 전파 적용!!!!!!!
+                                # 모든 라벨은 탑승 라벨을 기준으로 병렬 생성
+                                new_label = self._create_new_label(
+                                    label,  # 탑승 라벨 <- 기준점
+                                    start_cd_for_label,  # 탐승한 역 <- 환승 계산
+                                    previous_station_cd,  # 직전 역 <- 방향 계산
+                                    next_station_cd,  # 도착할 역
+                                    line,
+                                    round_num,
+                                    cumulative_travel_time,  # 누적 시간
+                                )
+
+                                existing_labels = labels[next_station_cd]
+                                new_frontier, updated = self._update_pareto_frontier(
+                                    new_label, existing_labels
+                                )
+
+                                if updated:
+                                    labels[next_station_cd] = new_frontier
+                                    # 새로운 라벨이 추가될 때에만 마킹
+                                    Q_next_round.add(next_station_cd)
 
             if not Q_next_round:
                 logger.info(f"No updates in round {round_num}, early termination")
                 break
-            Q = Q_next_round # 다음 라운드 대상 갱신
-        
+            Q = Q_next_round  # 다음 라운드 대상 갱신
+
         final_routes = []
+        logger.info(f"최종 경로 수: {len(final_routes)}개")
         for dest_cd in destination_cd_set:
+            logger.info(
+                f"Round {round_num} 후 목적지 {dest_cd}: {len(labels.get(dest_cd, []))}개 라벨"
+            )
             final_routes.extend(labels.get(dest_cd, []))
         return list(set(final_routes))
 
@@ -290,17 +402,18 @@ class McRaptor:
         return scored_routes
 
     # 캐싱 적용하여 수정
+    # !!! 병렬 시간 누적 적용을 위한 수정 적용 !!!
     def _create_new_label(
         self,
-        prev_label: Label,
-        from_station_cd: str,
-        to_station_cd: str,
+        prev_label: Label,  # 탑승 시점의 라벨
+        from_station_cd: str,  # 탑승한 역 -> 환승 계산용
+        prev_stop_cd: str,  # 직전 역 -> 방향 계산용
+        to_station_cd: str,  # 도착할 역
         line: str,
         created_round_num: int,
+        cumulative_travel_time: float,  # 누적 시간 인자 추가
     ) -> Label:
         """새로운 라벨 생성"""
-        # 지하철 역간 이동 시간 (MVP: 2분 고정)
-        travel_time = 2.0
 
         # 환승 여부 확인
         is_transfer = (prev_label.lines[-1] != line) if prev_label.lines else False
@@ -309,12 +422,15 @@ class McRaptor:
         transfer_time = 0.0
 
         if is_transfer:  # 환승이 발생할 때에만 계산!!!
+            # from_station_cd 기준으로 환승 계산!!!
             # transfer_context 저장을 위해 from_line, to_line 변수화
             from_line = prev_label.lines[-1]
             to_line = line
 
             # 환승 거리 조회 <- 캐싱 적용
-            transfer_distance = self._get_transfer_distance_cached(from_station_cd, prev_label.lines[-1], line)
+            transfer_distance = self._get_transfer_distance_cached(
+                from_station_cd, from_line, to_line  # 탑승역 기준
+            )
 
             # 환승역 시설 점수 조회 <- 캐싱 적용
             facility_scores = self._get_facility_scores_cached(from_station_cd)
@@ -327,9 +443,12 @@ class McRaptor:
             )
 
             # 환승 보행시간 계산 초->분
-            transfer_time = self.anp_calculator.calculate_transfer_walking_time(
-                transfer_distance, self.disability_type
-            ) / 60.0
+            transfer_time = (
+                self.anp_calculator.calculate_transfer_walking_time(
+                    transfer_distance, self.disability_type
+                )
+                / 60.0
+            )
 
             # logger.debug(
             #     f"환승: {from_station}({prev_label.lines[-1]}→{line}) "
@@ -340,11 +459,25 @@ class McRaptor:
 
         # 도착역 편의도 계산 <- 캐싱 적용
         new_convenience = self._calculate_convenience_score_cached(to_station_cd)
-        avg_convenience = (
-            prev_label.convenience_score * len(prev_label.route) + new_convenience
-        ) / (len(prev_label.route) + 1)
+        # 2분 당 1개 역으로 가정하여 새 경로의 총 역 개수를 근사치로 계산
+        # 환승 시, 탑승역이 prev_label.route에 이미 포함되어 있으므로 -1
+        base_route_len = len(prev_label.route)
+        added_stops_approx = cumulative_travel_time / 2.0
+        new_route_len_approx = (
+            (base_route_len - 1) + added_stops_approx + 1.0
+        )  # (기존 경로 - 1) + (추가 경로) + (현재 역)
+        if new_route_len_approx < 1.0:
+            new_route_len_approx = 1.0
 
-        direction = self._determine_direction(from_station_cd, to_station_cd, line)
+        avg_convenience = (
+            # (len(prev_label.route) - 1) => base_route_len
+            (prev_label.convenience_score * base_route_len)
+            + new_convenience
+        ) / new_route_len_approx
+
+        # 직전 역을 기준으로 방향 계산
+        direction = self._determine_direction(prev_stop_cd, to_station_cd, line)
+
         current_time = self.departure_time + timedelta(minutes=prev_label.arrival_time)
 
         # 메모리 캐시를 조회하는 anp_calculator의 get_congestion_from_rds 사용
@@ -352,8 +485,10 @@ class McRaptor:
             to_station_cd, line, direction, current_time
         )
         avg_congestion = (
-            prev_label.congestion_score * len(prev_label.route) + segment_congestion
-        ) / (len(prev_label.route) + 1)
+            # (len(prev_label.route) + 1) => new_route_len_approx
+            (prev_label.congestion_score * base_route_len)
+            + segment_congestion
+        ) / new_route_len_approx
 
         # transfer_context 리스트를 복사하고 새로운 환승 정보 추가
         new_transfer_context = prev_label.transfer_context.copy()
@@ -361,40 +496,47 @@ class McRaptor:
             new_transfer_context.append((from_station_cd, from_line, to_line))
 
         return Label(
-            arrival_time=prev_label.arrival_time + travel_time + transfer_time,
+            arrival_time=prev_label.arrival_time
+            + cumulative_travel_time
+            + transfer_time,
             transfers=prev_label.transfers + (1 if is_transfer else 0),
-            transfer_difficulty=prev_label.transfer_difficulty + transfer_difficulty_delta,
+            transfer_difficulty=prev_label.transfer_difficulty
+            + transfer_difficulty_delta,
             convenience_score=avg_convenience,
             congestion_score=avg_congestion,
+            # 경로 수정 => 병렬 방식에서는 탑승역 경로 + 도착역만 저장
             route=prev_label.route + [to_station_cd],
             lines=prev_label.lines + [line],
             transfer_context=new_transfer_context,
             created_round=created_round_num,
         )
 
-    def _get_stations_on_line(
-        self, station_cd:str, line:str
-    ) -> Dict[str, List[str]]:
+    def _get_stations_on_line(self, station_cd: str, line: str) -> Dict[str, List[str]]:
         """사전 생성한 맵 조회로 변경"""
         return self.line_stations_map.get((station_cd, line), {})
-        
 
-    def _get_transfer_distance_cached(self, station_cd: str, from_line:str, to_line: str) -> float:
+    def _get_transfer_distance_cached(
+        self, station_cd: str, from_line: str, to_line: str
+    ) -> float:
         """환승 거리 조회 <- 요청별 캐싱"""
         cache_key = (station_cd, from_line, to_line)
         if cache_key not in self._transfer_distance_cache:
-            self._transfer_distance_cache[cache_key] = get_transfer_distance(station_cd, from_line, to_line)
+            self._transfer_distance_cache[cache_key] = get_transfer_distance(
+                station_cd, from_line, to_line
+            )
         return self._transfer_distance_cache[cache_key]
-    
+
     def _get_facility_scores_cached(self, station_cd: str) -> Dict[str, float]:
-        """ 편의시설 점수 조회 <- 요청별 캐싱 """
+        """편의시설 점수 조회 <- 요청별 캐싱"""
         cache_key = (station_cd, self.disability_type)
         if cache_key not in self._facility_scores_cache:
-            self._facility_scores_cache[cache_key] = self._get_facility_scores(station_cd)
+            self._facility_scores_cache[cache_key] = self._get_facility_scores(
+                station_cd
+            )
         return self._facility_scores_cache[cache_key]
 
     def _get_facility_scores(self, station_cd: str) -> Dict[str, float]:
-        """ 편의시설 점수 계산 (self.convenience_scores 조회) """
+        """편의시설 점수 계산 (self.convenience_scores 조회)"""
         scores = self.convenience_scores.get(station_cd, {})
         if not scores:
             return {}
@@ -408,27 +550,29 @@ class McRaptor:
         }
 
     def _calculate_convenience_score_cached(self, station_cd: str) -> float:
-        """ 편의도 점수 계산 <- 요청별 캐싱 """
+        """편의도 점수 계산 <- 요청별 캐싱"""
         cache_key = (station_cd, self.disability_type)
         if cache_key not in self._convenience_cache:
             facility_scores = self._get_facility_scores_cached(station_cd)
             score = 2.5  # 기본값
             if facility_scores:
-                score = self.anp_calculator.calculate_convenience_score(self.disability_type, facility_scores)
+                score = self.anp_calculator.calculate_convenience_score(
+                    self.disability_type, facility_scores
+                )
             self._convenience_cache[cache_key] = score
         return self._convenience_cache[cache_key]
 
     def _determine_direction(
-    self, from_station_cd: str, to_station_cd: str, line: str
+        self, from_station_cd: str, to_station_cd: str, line: str
     ) -> str:
         """
         section_order를 이용한 방향 결정 <- 맵 조회 최적화 적용
-        
+
         Args:
             from_station: 출발역 이름
             to_station: 도착역 이름
             line: 호선
-        
+
         Returns:
             'up' | 'down' | 'in' | 'out'
         """
@@ -444,13 +588,15 @@ class McRaptor:
                 return "down" if to_order > from_order else "up"
 
         # logger.warning(f"방향 결정 실패: {from_station_cd} -> {to_station_cd} ({line})")
-        return "up" # 기본값
-    
-    def _update_pareto_frontier(self, new_label: Label, existing_labels: List[Label]) -> Tuple[List[Label], bool]:
-        """ 파레토 프론티어 단일 패스 갱신 """
+        return "up"  # 기본값
+
+    def _update_pareto_frontier(
+        self, new_label: Label, existing_labels: List[Label]
+    ) -> Tuple[List[Label], bool]:
+        """파레토 프론티어 단일 패스 갱신"""
         new_frontier = []
         is_dominated_by_existing = False
-        was_updated = False # 프론티어 변경 여부
+        was_updated = False  # 프론티어 변경 여부
 
         for existing in existing_labels:
             if existing.dominates(new_label):
@@ -460,7 +606,7 @@ class McRaptor:
             elif new_label.dominates(existing):
                 # 새 라벨이 기존 라벨을 지배 -> 기존 라벨 제거
                 was_updated = True
-                continue # 기존 라벨을 new_frontier에 추가하지 않음
+                continue  # 기존 라벨을 new_frontier에 추가하지 않음
             else:
                 # 지배 관계 아님 -> 둘 다 유지
                 new_frontier.append(existing)
@@ -471,12 +617,12 @@ class McRaptor:
             was_updated = True
 
         return new_frontier, was_updated
-    
+
     # main.py용 헬퍼 함수
     def get_station_info_from_cd(self, station_cd: str) -> Dict:
-        """ station_cd로 self.stations에서 역 정보 조회 """
+        """station_cd로 self.stations에서 역 정보 조회"""
         return self.stations.get(station_cd, {})
 
     def get_station_name_from_cd(self, station_cd: str) -> str:
-        """ station_cd로 역 이름 조회 """
+        """station_cd로 역 이름 조회"""
         return self.stations.get(station_cd, {}).get("name", "Unknown Station")
