@@ -67,17 +67,15 @@ class Label:
         # better or equal 확인
 
         # 최소화해야 하는 기준-소요시간,환승횟수,환승 난이도,혼잡도
-        time_be = (self.arrival_time - other.arrival_time) < TIME_EPSILON
+        time_be = self.arrival_time <= other.arrival_time + TIME_EPSILON
         transfers_be = (
             self.transfers <= other.transfers
         )  # 횟수는 정수이고 숫자간 차이가 매우 유효하므로 임계값 적용X
-        max_diff_be = (
-            self.max_transfer_difficulty - other.max_transfer_difficulty
-        ) < SCORE_EPSILON
-        avg_cong_be = (self.avg_congestion - other.avg_congestion) < SCORE_EPSILON
+        max_diff_be = self.max_transfer_difficulty <= other.max_transfer_difficulty + SCORE_EPSILON
+        avg_cong_be = self.avg_congestion <= other.avg_congestion + SCORE_EPSILON
 
         # 최대화해야 하는 기준-편의도
-        avg_conv_be = self.avg_convenience - other.avg_convenience > -SCORE_EPSILON
+        avg_conv_be = self.avg_convenience >= other.avg_convenience - SCORE_EPSILON
 
         better_or_equal = (
             time_be and transfers_be and max_diff_be and avg_cong_be and avg_conv_be
@@ -85,15 +83,13 @@ class Label:
 
         # strictly better 확인
         # 최소화 기준
-        time_sb = (other.arrival_time - self.arrival_time) > TIME_EPSILON
+        time_sb = self.arrival_time < other.arrival_time - TIME_EPSILON
         transfers_sb = self.transfers < other.transfers
-        max_diff_sb = (
-            other.max_transfer_difficulty - self.max_transfer_difficulty
-        ) > SCORE_EPSILON
-        avg_cong_sb = (other.avg_congestion - self.avg_congestion) > SCORE_EPSILON
+        max_diff_sb = self.max_transfer_difficulty < other.max_transfer_difficulty - SCORE_EPSILON
+        avg_cong_sb = self.avg_congestion < other.avg_congestion - SCORE_EPSILON
 
         # 최대화 기준
-        avg_conv_sb = (self.avg_convenience - other.avg_convenience) > SCORE_EPSILON
+        avg_conv_sb = self.avg_convenience > other.avg_convenience + SCORE_EPSILON
 
         strictly_better = (
             time_sb or transfers_sb or max_diff_sb or avg_conv_sb or avg_cong_sb
