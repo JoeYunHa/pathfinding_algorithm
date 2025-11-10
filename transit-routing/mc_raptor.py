@@ -305,6 +305,10 @@ class McRaptor:
                 current_line = label.current_line
                 station_cd = label.current_station_cd
 
+                # 목적지에 도착한 라벨은 더 이상 확장하지 않음
+                if station_cd in destination_cd_set:
+                    continue
+
                 availables_lines = self._get_available_lines(station_cd)
 
                 for line in availables_lines:

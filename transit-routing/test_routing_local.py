@@ -17,21 +17,43 @@ logger = logging.getLogger(__name__)
 
 
 def get_station_cd_by_name(station_name: str) -> str:
-    """역 이름으로 station_cd 조회"""
-    query = """
+    """역 이름으로 station_cd 조회 (유연한 검색)"""
+
+    # 입력값 전처리 (앞뒤 공백 제거)
+    station_name = station_name.strip()
+
+    # 1단계: 정확히 일치하는 역 찾기 (TRIM 적용)
+    query_exact = """
     SELECT station_cd, name, line
     FROM subway_station
-    WHERE name = %(station_name)s
+    WHERE TRIM(name) = %(station_name)s
     LIMIT 1
     """
 
     with get_db_cursor() as cursor:
-        cursor.execute(query, {"station_name": station_name})
+        cursor.execute(query_exact, {"station_name": station_name})
         result = cursor.fetchone()
 
         if result:
             logger.debug(
-                f"역 찾음: {result['name']} ({result['line']}) - {result['station_cd']}"
+                f"역 찾음 (정확 일치): {result['name']} ({result['line']}) - {result['station_cd']}"
+            )
+            return result["station_cd"]
+
+        # 2단계: 부분 일치 검색 (LIKE 사용)
+        query_like = """
+        SELECT station_cd, name, line
+        FROM subway_station
+        WHERE TRIM(name) LIKE %(pattern)s
+        LIMIT 1
+        """
+
+        cursor.execute(query_like, {"pattern": f"%{station_name}%"})
+        result = cursor.fetchone()
+
+        if result:
+            logger.debug(
+                f"역 찾음 (부분 일치): {result['name']} ({result['line']}) - {result['station_cd']}"
             )
             return result["station_cd"]
         else:
