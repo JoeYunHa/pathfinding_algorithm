@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from datetime import datetime
 from typing import List, Optional, Dict, Any
@@ -13,11 +14,9 @@ load_dotenv()
 from label import Label
 from mc_raptor import McRaptor
 from anp_weights import ANPWeightCalculator
-from database import(
-    get_all_sections,
+from database import (
     get_all_stations,
-    get_all_transfer_station_conv_scores,
-    get_station_by_code, # station_code로 
+    get_station_by_code,
 )
 from config import (
     DISABILITY_TYPES,
@@ -58,26 +57,12 @@ async def lifespan(app: FastAPI):
         initialize_pool()
         logger.info("database connection pool 초기화 완료")
 
-        # db에서 모든 데이터 미리 로드
-        stations = get_all_stations()
-        sections = get_all_sections()
-        convenience_scores = get_all_transfer_station_conv_scores()
-
-        logger.info(
-            f"로드 완료: 역 {len(stations)}개, 구간 {len(sections)}개, 편의성 점수 {len(convenience_scores)} 개"
-        )
-
         # anp_calculator 초기화 + 혼잡도 데이터 로드
         anp_calculator = ANPWeightCalculator()
+        logger.info("ANP Calculator 초기화 완료")
 
-        # McRaptor 초기화 + 그래프 및 맵 사전 연산
-        raptor_instance = McRaptor(
-            stations=stations,
-            sections=sections,
-            convenience_scores=convenience_scores,
-            anp_calculator=anp_calculator,
-        )
-
+        # McRaptor 초기화 (내부적으로 데이터 로드)
+        raptor_instance = McRaptor()
         logger.info("RAPTOR 초기화 완료")
 
     except Exception as e:
@@ -182,7 +167,7 @@ def label_to_dict(label: Label, rank: int, disability_type: str) -> Dict[str, An
     for station_cd in route_cds:
         station = get_station_by_code(station_cd)
         if station:
-            route_names.append(station['station_name'])
+            route_names.append(station['name'])
         else:
             route_names.append(station_cd)
 
@@ -192,7 +177,7 @@ def label_to_dict(label: Label, rank: int, disability_type: str) -> Dict[str, An
         station = get_station_by_code(station_cd)
         transfers_formatted.append({
             "station_cd": station_cd,
-            "station_name": station['station_name'] if station else station_cd,
+            "station_name": station['name'] if station else station_cd,
             "from_line": from_line,
             "to_line": to_line
         })
@@ -388,7 +373,7 @@ async def get_stations(line: Optional[str] = None):
         for station in stations:
             station_list.append(StationInfo(
                 station_cd=station['station_cd'],
-                station_name=station['station_name'],
+                station_name=station['name'],
                 line=station['line'],
                 lat=station.get('lat'),
                 lng=station.get('lng')
@@ -422,7 +407,7 @@ async def get_station(station_cd: str):
 
         return StationInfo(
             station_cd=station['station_cd'],
-            station_name=station['station_name'],
+            station_name=station['name'],
             line=station['line'],
             lat=station.get('lat'),
             lng=station.get('lng')
@@ -493,20 +478,26 @@ async def get_anp_weights(disability_type: str):
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc):
     """HTTP 예외 핸들러"""
-    return {
-        "success": False,
-        "error": exc.detail,
-        "status_code": exc.status_code
-    }
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "success": False,
+            "error": exc.detail,
+            "status_code": exc.status_code
+        }
+    )
 
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request, exc):
     """일반 예외 핸들러"""
     logger.error(f"Unhandled exception: {str(exc)}", exc_info=True)
-    return {
-        "success": False,
-        "error": "Internal server error",
-        "detail": str(exc)
-    }
+    return JSONResponse(
+        status_code=500,
+        content={
+            "success": False,
+            "error": "Internal server error",
+            "detail": str(exc)
+        }
+    )
 
