@@ -91,3 +91,6 @@ docs/_templates/
 *.bak
 *.backup
 *.tmp
+
+# personal text
+.mc_raptor_algorithm_v_3.md
