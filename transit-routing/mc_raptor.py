@@ -5,10 +5,19 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 
 from label import Label
-from database import get_db_cursor, get_transfer_distance, get_all_transfer_station_conv_scores
+from database import (
+    get_db_cursor,
+    get_transfer_distance,
+    get_all_transfer_station_conv_scores,
+)
 from distance_calculator import DistanceCalculator
 from anp_weights import ANPWeightCalculator
-from config import CIRCULAR_LINES, DEFAULT_TRANSFER_DISTANCE, WALKING_SPEED
+from config import (
+    CIRCULAR_LINES,
+    DEFAULT_TRANSFER_DISTANCE,
+    WALKING_SPEED,
+    EPSILON_CONFIG,
+)
 import logging
 
 logger = logging.getLogger(__name__)
@@ -18,19 +27,26 @@ class McRaptor:
     def __init__(self):
         self.distance_calculator = DistanceCalculator()
         self.anp_calculator = ANPWeightCalculator()
-        
-        self.transfers = {} # (station_cd, from_line, to_line) -> {transfer_distance, facility_scores}
 
+        # key : (staiton_cd, from_line, to_line) -> values: {transfer_distance, facility_scores}
+        self.transfers = {}
 
         # context manager 사용
-        self._load_station_data()
-        self._load_line_data()
+        self._load_station_data()  # =>  FROM subway_station -> SELECT station_cd, name, line, lat, lng
+        self._load_line_data()  # => SELECT line, up_station_name, down_station_name, section_order
 
+        # 종종 station_cd가 다르다는 이유로 환승이 중복되어 발생
+        # station_name이 동일한데, line이 변경되는 경우만 환승으로 인정
+        # 이를 위한 cache memory => station_name : {station_cd1, station_cd2, ...}
         self._load_transfers()
 
         # ANP 계산에 사용하는 헬퍼
         self.disability_type = "PHY"
         self.departure_time = datetime.now()
+
+        # Bounded Pareto 설정
+        self.max_labels_per_state = 50
+        logger.info("epsilon-pruning activated")
 
     def _load_station_data(self):
         """지하철 역 데이터 로드"""
@@ -143,10 +159,10 @@ class McRaptor:
 
         # transfers dictionary 구축
         for row in distance_rows:
-            transfer_key = (row['station_cd'], row['line_num'], row['transfer_line'])
+            transfer_key = (row["station_cd"], row["line_num"], row["transfer_line"])
             self.transfers[transfer_key] = {
-                'transfer_distance': float(row['distance']),
-                'facility_scores': {}
+                "transfer_distance": float(row["distance"]),
+                "facility_scores": {},
             }
 
         # 편의시설 점수 로딩 <- database의 함수 사용
@@ -154,43 +170,43 @@ class McRaptor:
 
         convenience_by_station = {}
         for conv_row in convenience_data:
-            station_cd = conv_row['station_cd']
+            station_cd = conv_row["station_cd"]
             convenience_by_station[station_cd] = {
-                'PHY': {
-                    'elevator': conv_row.get('elevator_phy'),
-                    'escalator': conv_row.get('escalator_phy'),
-                    'transfer_walk': conv_row.get('transfer_walk_phy'),
-                    'other_facil': conv_row.get('other_facil_phy'),
-                    'staff_help': conv_row.get('staff_help_phy'),
+                "PHY": {
+                    "elevator": conv_row.get("elevator_phy"),
+                    "escalator": conv_row.get("escalator_phy"),
+                    "transfer_walk": conv_row.get("transfer_walk_phy"),
+                    "other_facil": conv_row.get("other_facil_phy"),
+                    "staff_help": conv_row.get("staff_help_phy"),
                 },
-                'VIS': {
-                    'elevator': conv_row.get('elevator_vis'),
-                    'escalator': conv_row.get('escalator_vis'),
-                    'transfer_walk': conv_row.get('transfer_walk_vis'),
-                    'other_facil': conv_row.get('other_facil_vis'),
-                    'staff_help': conv_row.get('staff_help_vis'),
+                "VIS": {
+                    "elevator": conv_row.get("elevator_vis"),
+                    "escalator": conv_row.get("escalator_vis"),
+                    "transfer_walk": conv_row.get("transfer_walk_vis"),
+                    "other_facil": conv_row.get("other_facil_vis"),
+                    "staff_help": conv_row.get("staff_help_vis"),
                 },
-                'AUD': {
-                    'elevator': conv_row.get('elevator_aud'),
-                    'escalator': conv_row.get('escalator_aud'),
-                    'transfer_walk': conv_row.get('transfer_walk_aud'),
-                    'other_facil': conv_row.get('other_facil_aud'),
-                    'staff_help': conv_row.get('staff_help_aud'),
+                "AUD": {
+                    "elevator": conv_row.get("elevator_aud"),
+                    "escalator": conv_row.get("escalator_aud"),
+                    "transfer_walk": conv_row.get("transfer_walk_aud"),
+                    "other_facil": conv_row.get("other_facil_aud"),
+                    "staff_help": conv_row.get("staff_help_aud"),
                 },
-                'ELD': {  # 고령자 - 휠체어 데이터 재사용
-                    'elevator': conv_row.get('elevator_phy'),
-                    'escalator': conv_row.get('escalator_phy'),
-                    'transfer_walk': conv_row.get('transfer_walk_phy'),
-                    'other_facil': conv_row.get('other_facil_phy'),
-                    'staff_help': conv_row.get('staff_help_phy'),
-                }
+                "ELD": {  # 고령자 - 휠체어 데이터 재사용
+                    "elevator": conv_row.get("elevator_phy"),
+                    "escalator": conv_row.get("escalator_phy"),
+                    "transfer_walk": conv_row.get("transfer_walk_phy"),
+                    "other_facil": conv_row.get("other_facil_phy"),
+                    "staff_help": conv_row.get("staff_help_phy"),
+                },
             }
 
         # 각 역의 모든 환승에 편의시설 점수 적용
         for transfer_key, transfer_data in self.transfers.items():
             station_cd = transfer_key[0]
             if station_cd in convenience_by_station:
-                transfer_data['facility_scores'] = convenience_by_station[station_cd]
+                transfer_data["facility_scores"] = convenience_by_station[station_cd]
 
         logger.info(f"McRaptor: 환승 데이터 {len(self.transfers)}개 로드 완료")
 
@@ -313,12 +329,21 @@ class McRaptor:
 
                 for line in availables_lines:
                     line_start_cd = station_cd
-                    is_transfer = current_line != line
+                    # 현재 환승 판단 기준 => 호선만 비교
+                    # 출발역에서의 노선 선택 => 환승 아님
+                    if label.depth == 1:
+                        is_transfer = False
+                    else:
+                        is_transfer = current_line != line
 
                     if label.transfers + (1 if is_transfer else 0) > round_num:
                         continue
 
                     if is_transfer:
+                        # 환승 직후 같은 역에서 연속 환승 방지 로직 추가!!!
+                        if label.is_first_move and label.parent_label is not None:
+                            continue  # 환승 시도 차단
+
                         transfer_station_name = self.stations[station_cd][
                             "station_name"
                         ]
@@ -328,6 +353,10 @@ class McRaptor:
                         if not line_start_cd_found:
                             continue
                         line_start_cd = line_start_cd_found
+
+                        # 환승 목적지가 도착역일 경우
+                        if line_start_cd in destination_cd_set:
+                            continue  # 도착했으므로 환승할 필요 없음
 
                         new_label = self._create_new_label(
                             label,
@@ -406,6 +435,8 @@ class McRaptor:
                                 if updated:
                                     Q_next_round.add(next_station_cd)
 
+                                previous_station_cd_for_direction = next_station_cd
+
             Q = Q_next_round  # 다음 라운드 마킹 갱신
 
         # 최종 경로 필터링
@@ -431,7 +462,11 @@ class McRaptor:
     ) -> Label:
         """새 라벨 생성 (ANP 점수 계산 포함)"""
 
-        is_transfer = prev_label.current_line != line
+        # 환승 판단 : prev_label의 parent_label이 없으면(출발역에서의 이동) => 환승 아님
+        if prev_label.parent_label is None:
+            is_transfer = False
+        else:
+            is_transfer = prev_label.current_line != line
 
         transfer_time = 0.0
         current_transfer_info = None
@@ -512,7 +547,7 @@ class McRaptor:
         if not station_name:
             # MVP에선 임시로 리스트에 존재하지 않을 경우 => 기본점수 2.5
             return 2.5  # 추후 편의 시설 db 추가로 구축한 다음, 로직 전체 수정하기
-        
+
         for (key_cd, from_line, to_line), data in self.transfers.items():
             if key_cd == station_cd:
                 ## 검토 필요
@@ -546,28 +581,59 @@ class McRaptor:
         """pareto frontier를 갱신
         새로운 라벨이 지배되지 않고 추가되었을 때 => True
         이는 단순한 추가뿐만 아니라, 기존 라벨 중 새라벨에 의해 지배되는 것들을 제거하는 것까지 포함
-        => 파레토 최적해를 만족하며 라벨 폭증을 막음 and pareto frontier는 비지배 집합이어야 함"""
+        => 파레토 최적해를 만족하며 라벨 폭증을 막음 and pareto frontier는 비지배 집합이어야 함
+        + epsilon-pruning + Bounded Pareto"""
+
+        # 유형별 epsilon 값 가져오기
+        epsilon = EPSILON_CONFIG.get(self.disability_type, 0.05)
+
+        # ANP 가중치 가져오기
+        anp_weights = self.anp_calculator.calculate_weights(self.disability_type)
 
         is_dominated_by_existing = False
         was_updated = False
 
+        # 엄격한 파레토 지배 체크
         for existing in existing_labels:
             if existing.dominates(new_label):
                 is_dominated_by_existing = True
-                break
+                return False
 
-        if is_dominated_by_existing:
-            return False
+        # epsilon-similarity check
+        similar_label_found = False
+        label_to_remove = None
 
-        # => new_label이 지배당하지 않음
-        # => 기존 라벨 중 new_label에게 지배당하는 것을 제거
+        for existing in existing_labels:
+            if new_label.epsilon_similar(existing, epsilon, anp_weights):
+                # 유사할 경우 -> 더 나은 것만 유지
+                new_score = new_label.calculate_weighted_score(anp_weights)
+                existing_score = existing.calculate_weighted_score(anp_weights)
+
+                if new_score >= existing_score:
+                    return False
+                else:
+                    label_to_remove = existing
+                    similar_label_found = True
+                    break
+
+        if similar_label_found and label_to_remove is not None:
+            existing_labels.remove(label_to_remove)
+
+        # 기존 라벨 중 new_label에게 지배당하는 것을 제거
         for i in range(len(existing_labels) - 1, -1, -1):
             if new_label.dominates(
                 existing_labels[i]
             ):  # new_label에 의해 지배당할 경우
                 existing_labels.pop(i)  # 기존 라벨 제거
 
+        # 새 라벨 추가
         existing_labels.append(new_label)
+
+        # Bounded Pareto
+        if len(existing_labels) > self.max_labels_per_state:
+            existing_labels.sort(key=lambda l: l.calculate_weighted_score(anp_weights))
+            del existing_labels[self.max_labels_per_state :]
+
         return True
 
     def rank_routes(

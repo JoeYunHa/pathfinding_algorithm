@@ -137,7 +137,7 @@ def test_single_route(
 
         logger.info(f"장애 유형: {disability_type}")
         logger.info(f"출발 시각: {departure_time.strftime('%Y-%m-%d %H:%M:%S')}")
-        logger.info(f"최대 라운드: 10")
+        logger.info(f"최대 라운드: 4")
 
         start_time = time.time()
 
@@ -146,7 +146,7 @@ def test_single_route(
             destination_cd_set={destination_cd},
             departure_time=departure_time,
             disability_type=disability_type,
-            max_rounds=5,
+            max_rounds=5, # 5의 경우 라벨 폭증
         )
 
         end_time = time.time()
@@ -183,7 +183,7 @@ def test_route_finding():
     test_cases = [
         ("광화문", "남성"),
         ("충무로", "동묘앞"),
-        ("구반포", "서울역"),
+        ("구반포", "서울"),
         ("청구", "숙대입구"),
     ]
 

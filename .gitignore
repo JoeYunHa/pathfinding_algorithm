@@ -93,4 +93,5 @@ docs/_templates/
 *.tmp
 
 # personal text
-.mc_raptor_algorithm_v_3.md
+.transit-routing/mc_raptor_algorithm_v_3.md
+*.gitignore
