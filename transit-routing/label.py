@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Optional, List, Tuple, Dict
+import math
 
 EMPTY_FROZENSET = frozenset()
 
@@ -161,3 +162,70 @@ class Label:
         )
 
         return score
+
+    # epsilon-pruning 구현을 위한 정규화 벡터 반환
+    def get_normalized_vector(self) -> List[float]:
+        """
+        cost vector를 정규화하여 반환[0,1]
+
+        Returns:
+            [norm_time, norm_transfers, norm_difficulty, norm_convenience, norm_congestion]
+        """
+
+        # travel_time => 90분을 기준으로 정규화, 서울 지하철 전체 횡단 시간 == 90분
+        norm_time = self.arrival_time / 90.0
+
+        # 환승 최대 3회로 정규화 => round 별로 변경하며 조정
+        norm_transfers = self.transfers / 3.0
+
+        # 환승 난이도 => 이미 정규화
+        norm_difficulty = self.max_transfer_difficulty
+
+        # 편의도 => 해당 벡터는 epsilon 공간을 계산하기 위함이므로 반전하지 않음
+        # [0, 5] => [0, 1]
+        norm_convenience = self.avg_convenience
+
+        # 혼잡도 : 1.3을 최대값으로 하여 정규화
+        norm_congestion = self.avg_congestion
+
+        return [
+            norm_time,
+            norm_transfers,
+            norm_difficulty,
+            norm_convenience,
+            norm_congestion,
+        ]
+
+    def weighted_distance(self, other: "Label", anp_weights: Dict[str, float]) -> float:
+        """
+        다른 라벨과의 가중 유클리드 거리 계산
+        ANP 가중치를 사용하여 기준별 중요도 반영
+        """
+
+        v1 = self.get_normalized_vector()
+        v2 = other.get_normalized_vector()
+
+        criteria = [
+            "travel_time",
+            "transfers",
+            "transfer_difficulty",
+            "convenience",
+            "congestion",
+        ]
+
+        diff_sq = 0.0
+        for i, criterion in enumerate(criteria):
+            weight = anp_weights.get(criterion, 0.2)
+            diff = v1[i] - v2[i]
+
+            diff_sq += weight * diff * diff
+
+        return math.sqrt(diff_sq)
+
+    def epsilon_similar(
+        self, other: "Label", epsilon: float, anp_weights: Dict[str, float]
+    ) -> bool:
+        """다른 라벨과 epsilon 값 내에서 유사한지 판단"""
+
+        distance = self.weighted_distance(other, anp_weights)
+        return distance <= epsilon

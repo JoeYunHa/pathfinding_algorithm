@@ -55,3 +55,11 @@ WALKING_SPEED = {
 
 # 환승 거리 기본값(m) <- 전체 환승 거리의 평균
 DEFAULT_TRANSFER_DISTANCE = 133.09
+
+# 장애 유형별 epsilon
+EPSILON_CONFIG = {
+    "PHY": 0.04,  # 휠체어: 보수적 (환승 중요)
+    "VIS": 0.05,  # 시각장애: 균형
+    "AUD": 0.05,  # 청각장애: 균형
+    "ELD": 0.03,  # 고령자: 매우 보수적 (변화에 민감)
+}
