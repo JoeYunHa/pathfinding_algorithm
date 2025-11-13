@@ -101,6 +101,7 @@ class Label:
             return False
         if self.current_line != other.current_line:
             return False
+        # # 환승 횟수가 다르면 비교 생략 => 열등한 라벨 생존으로 이어질 수 있음
         if self.transfers != other.transfers:
             return False
 

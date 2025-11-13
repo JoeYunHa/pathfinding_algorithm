@@ -426,6 +426,8 @@ class McRaptor:
                                 if updated:
                                     Q_next_round.add(next_station_cd)
 
+                                previous_station_cd_for_direction = next_station_cd
+
             Q = Q_next_round  # 다음 라운드 마킹 갱신
 
         # 최종 경로 필터링
