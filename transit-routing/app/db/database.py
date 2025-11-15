@@ -321,7 +321,7 @@ def get_nearby_stations(lat: float, lon: float, radius_km: float = 1.0) -> List[
 
 
 # 추가된 db 관련 함수 추가(혼잡도, 환승 거리)
-def get_station_code(station_id: str) -> str:
+def get_station_code_by_ID(station_id: str) -> str:
     """station_id로 station_cd 조회"""
     query = """
     SELECT station_cd 
@@ -422,3 +422,132 @@ def get_transfer_distance(station_cd: str, from_line: str, to_line: str) -> floa
     except Exception as e:
         logger.error(f"환승 거리 조회 실패: {e}")
         return DEFAULT_TRANSFER_DISTANCE
+
+
+def get_station_cd_by_name(self, station_name: str) -> Optional[str]:
+    station_name = station_name.strip()
+
+    # 1단계: 정확히 일치하는 역 찾기
+    query_exact = """
+    SELECT station_cd, name, line
+    FROM subway_station
+    WHERE TRIM(name) = %(station_name)s
+    LIMIT 1
+    """
+
+    with get_db_cursor() as cursor:
+        cursor.execute(query_exact, {"station_name": station_name})
+        result = cursor.fetchone()
+
+        if result:
+            logger.debug(
+                f"역 찾음 (정확 일치): {result['name']} ({result['line']}) - {result['station_cd']}"
+            )
+            return result["station_cd"]
+
+        # 2단계: 부분 일치 검색 (입력값이 역 이름에 포함되거나, 역 이름이 입력값에 포함)
+        query_partial = """
+        SELECT station_cd, name, line
+        FROM subway_station
+        WHERE TRIM(name) LIKE %(pattern1)s 
+           OR %(station_name)s LIKE '%' || TRIM(name) || '%'
+        ORDER BY 
+            CASE 
+                WHEN TRIM(name) LIKE %(pattern1)s THEN 1
+                ELSE 2
+            END,
+            LENGTH(name) ASC
+        LIMIT 1
+        """
+
+        cursor.execute(
+            query_partial,
+            {"pattern1": f"%{station_name}%", "station_name": station_name},
+        )
+        result = cursor.fetchone()
+
+        if result:
+            logger.debug(
+                f"역 찾음 (부분 일치): {station_name} → {result['name']} ({result['line']}) - {result['station_cd']}"
+            )
+            return result["station_cd"]
+        else:
+            logger.warning(f"역을 찾을 수 없음: {station_name}")
+            return None
+
+
+def get_station_name_by_cd(station_cd: str) -> Optional[str]:
+    """
+    station_cd로 역 이름 조회
+
+    Args:
+        station_cd: 역 코드
+
+    Returns:
+        역 이름 또는 None
+    """
+    query = """
+    SELECT name
+    FROM subway_station
+    WHERE station_cd = %(station_cd)s
+    LIMIT 1
+    """
+
+    with get_db_cursor() as cursor:
+        cursor.execute(query, {"station_cd": station_cd})
+        result = cursor.fetchone()
+
+        if result:
+            return result["name"]
+        else:
+            logger.warning(f"역 이름을 찾을 수 없음: {station_cd}")
+            return station_cd  # 실패 시 코드 그대로 반환
+
+
+def search_stations_by_name(keyword: str, limit: int = 10) -> List[Dict]:
+    """
+    역 이름 검색 (자동완성용)
+
+    Args:
+        keyword: 검색 키워드
+        limit: 최대 결과 수
+
+    Returns:
+        검색된 역 정보 리스트
+
+    Example:
+        >>> search_stations_by_name("강남")
+        [
+            {"station_cd": "0222", "name": "강남", "line": "2호선"},
+            {"station_cd": "0357", "name": "강남구청", "line": "7호선"},
+            ...
+        ]
+    """
+    keyword = keyword.strip()
+
+    query = """
+    SELECT DISTINCT station_cd, name, line
+    FROM subway_station
+    WHERE TRIM(name) LIKE %(pattern)s
+    ORDER BY 
+        CASE 
+            WHEN TRIM(name) = %(keyword)s THEN 1
+            WHEN TRIM(name) LIKE %(keyword_prefix)s THEN 2
+            ELSE 3
+        END,
+        LENGTH(name) ASC,
+        name ASC
+    LIMIT %(limit)s
+    """
+
+    with get_db_cursor() as cursor:
+        cursor.execute(
+            query,
+            {
+                "pattern": f"%{keyword}%",
+                "keyword": keyword,
+                "keyword_prefix": f"{keyword}%",
+                "limit": limit,
+            },
+        )
+        return cursor.fetchall()
