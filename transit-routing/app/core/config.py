@@ -1,15 +1,47 @@
 import os
 from typing import Dict, Any
+from dotenv import load_dotenv
 
-DB_CONFIG = {
-    "host": os.getenv("DB_HOST", "rds_endpoint"),
-    "port": int(os.getenv("DB_PORT", 5432)),
-    "database": os.getenv("DB_NAME", "database_name"),
-    "user": os.getenv("DB_USER", "postgres"),
-    "password": os.getenv("DB_PASSWORD", "password"),
-    "sslmode": "require",  # rds는 ssl 필수
-    "connect_timeout": 30,
-}
+load_dotenv()  # 환경변수 읽어오기
+
+
+class Settings:
+    PROJECT_NAME: str = "KindMap Backend"
+    VERSION: str = "4.0.0"  # get file refactoring
+
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "dev-secret-key-change-in-production")
+    DEBUG: bool = os.getenv("DEBUG", "False").lower() == "true"
+    PORT: int = int(os.getenv("PORT", 8001))
+
+    DB_HOST: str = os.getenv("DB_HOST", "rds_endpoint")
+    DB_PORT: int = int(os.getenv("DB_PORT", 5432))
+    DB_NAME: str = os.getenv("DB_NAME", "database_name")
+    DB_USER: str = os.getenv("DB_USER", "postgres")
+    DB_PASSWORD: str = os.getenv("DB_PASSWORD", "password")
+
+    REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
+    REDIS_PORT: int = int(os.getenv("REDIS_PORT", 6379))
+
+    CELERY_BROKER_URL: str = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/1")
+    CELERY_RESULT_BACKEND: str = os.getenv(
+        "CELERY_RESULT_BACKEND", "redis://localhost:6379/2"
+    )
+
+    @property
+    def DB_CONFIG(self) -> Dict[str, Any]:
+        return {
+            "host": self.DB_HOST,
+            "port": self.DB_PORT,
+            "database": self.DB_NAME,
+            "user": self.DB_USER,
+            "password": self.DB_PASSWORD,
+            "sslmode": "require",  # rds는 ssl 필수
+            "connect_timeout": 30,
+        }
+
+
+settings = Settings()  # 모듈화
+
 
 DISABILITY_TYPES = {
     "PHY": "지체장애",  # 휠체어 사용자
@@ -56,10 +88,10 @@ WALKING_SPEED = {
 # 환승 거리 기본값(m) <- 전체 환승 거리의 평균
 DEFAULT_TRANSFER_DISTANCE = 133.09
 
-# 장애 유형별 epsilon
+# 장애 유형별 epsilon => v4 : eopsilon 강화
 EPSILON_CONFIG = {
-    "PHY": 0.04,  # 휠체어: 보수적 (환승 중요)
-    "VIS": 0.05,  # 시각장애: 균형
-    "AUD": 0.05,  # 청각장애: 균형
-    "ELD": 0.03,  # 고령자: 매우 보수적 (변화에 민감)
+    "PHY": 0.08,  # 휠체어: 보수적 (환승 중요)
+    "VIS": 0.10,  # 시각장애: 균형
+    "AUD": 0.10,  # 청각장애: 균형
+    "ELD": 0.06,  # 고령자: 매우 보수적 (변화에 민감)
 }
