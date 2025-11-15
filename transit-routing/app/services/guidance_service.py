@@ -1,6 +1,10 @@
 import logging
 from typing import Optional, Dict, Any
 
+# NNS => KD-TREE 사용하기
+from scipy.spatial import KDTree
+import numpy as np
+
 from app.db.redis_client import RedisSessionManager
 from app.algorithms.distance_calculator import DistanceCalculator
 from app.db.cache import get_stations_dict, get_station_name_by_code
@@ -15,8 +19,20 @@ class GuidanceService:
     def __init__(self, redis_client: RedisSessionManager):
         self.redis_client = redis_client
         self.distance_calc = DistanceCalculator()
+
         # 캐시에서 역 정보 로드 (DB 쿼리 없음)
         self.stations = get_stations_dict()
+
+        # KD-Tree 초기화
+        station_coords = []
+        self.station_cd_list = []
+
+        for station_cd, info in self.stations.items():
+            station_coords.append([info["lat"], info["lng"]])
+            self.station_cd_list.append(station_cd)
+
+        self.kdtree = KDTree(np.array(station_coords))
+
         logger.info("GuidanceService 초기화 완료")
 
     def get_navigation_guidance(
@@ -45,13 +61,17 @@ class GuidanceService:
             SessionNotFoundException: 세션이 없을 때
             InvalidLocationException: 유효하지 않은 위치일 때
         """
+        # 입력 검증
+        if not self._is_valid_location(lat, lon):
+            raise InvalidLocationException(f"유효하지 않은 GPS 좌표: {lat}, {lon}")
+
         # 세션 확인
         session = self.redis_client.get_session(user_id)
         if not session:
             raise SessionNotFoundException("활성 세션이 없습니다")
 
         # 현재 위치에서 가장 가까운 역 찾기
-        current_station_cd = self._find_nearest_station(lat, lon)
+        current_station_cd = self.find_nearest_station(lat, lon)
 
         # 세션에서 경로 정보 추출
         route_sequence = session["route_sequence"]
@@ -166,9 +186,9 @@ class GuidanceService:
 
         raise InvalidLocationException("경로가 올바르지 않습니다")
 
-    def _find_nearest_station(self, lat: float, lon: float) -> str:
+    def find_nearest_station(self, lat: float, lon: float) -> str:
         """
-        현재 위치에서 가장 가까운 역 찾기
+        현재 위치에서 가장 가까운 역 찾기 => KD-Tree 사용 : O(log N)
 
         Args:
             lat: 위도
@@ -177,23 +197,10 @@ class GuidanceService:
         Returns:
             가장 가까운 역의 station_cd
         """
-        min_dist = float("inf")
-        nearest_cd = None
+        distance, index = self.kdtree.query([lat, lon])
+        return self.station_cd_list[index]
 
-        for station_cd, info in self.stations.items():
-            dist = self.distance_calc.calculate_distance(
-                lat, lon, info["lat"], info["lng"]
-            )
-
-            if dist < min_dist:
-                min_dist = dist
-                nearest_cd = station_cd
-
-        logger.debug(f"가장 가까운 역: {nearest_cd} (거리: {min_dist:.2f}m)")
-
-        return nearest_cd
-
-    def _find_nearest_station_name(self, lat: float, lon: float) -> str:
+    def find_nearest_station_name(self, lat: float, lon: float) -> str:
         """
         현재 위치에서 가장 가까운 역 이름 반환
 
@@ -204,5 +211,29 @@ class GuidanceService:
         Returns:
             가장 가까운 역 이름
         """
-        station_cd = self._find_nearest_station(lat, lon)
+        station_cd = self.find_nearest_station(lat, lon)
         return get_station_name_by_code(station_cd)
+
+    def _is_valid_location(self, lat: float, lon: float) -> bool:
+        """
+        서울 지역 GPS 좌표 검증
+        서울 대략 범위:
+        - 위도: 37.4 ~ 37.7
+        - 경도: 126.8 ~ 127.2
+        """
+
+        # 기본적인 GPS 범위 검증
+        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            return False
+
+        # 여유있게 서울 권역 검증
+        SEOUL_LAT_MIN, SEOUL_LAT_MAX = 36.0, 39.0
+        SEOUL_LON_MIN, SEOUL_LON_MAX = 126.4, 127.6
+
+        if not (
+            SEOUL_LAT_MIN <= lat <= SEOUL_LAT_MAX
+            and SEOUL_LON_MIN <= lon <= SEOUL_LON_MAX
+        ):
+            logger.warning(f"현재 지원하지 않는 지역입니다: lat={lat}, lon={lon}")
+            return False
+        return True

@@ -42,6 +42,8 @@ env/
 *.ipynb_checkpoints/
 
 # Testing
+test/
+pytest.ini
 .pytest_cache/
 .coverage
 htmlcov/
@@ -94,3 +96,7 @@ docs/_templates/
 
 # personal text
 .mc_raptor_algorithm_v_3.md
+
+# AI agent
+.claude
+.serena

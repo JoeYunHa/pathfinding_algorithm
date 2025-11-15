@@ -20,18 +20,54 @@ router = APIRouter()
 # 서비스 초기화
 redis_client = init_redis()
 
+# module level에서 서비스 인스턴스가 한 번만 생성되도록 함
+pathfinding_service = PathfindingService()
+guidance_service = GuidanceService(redis_client)
 
 class ConnectionManager:
     """websocket 연결 관리자"""
+
+    # 추후 부하테스트를 통해 임계점을 찾고 수정하기
+    # 임시 최대 동시 연결 수 => 100
+    MAX_CONNECTIONS = 1000
 
     def __init__(self):
         self.active_connections: Dict[str, WebSocket] = {}
 
     async def connect(self, websocket: WebSocket, user_id: str):
+        # 기존 연결 확인 및 정리
+        if user_id in self.active_connections:
+            logger.warning(f"중복 연결 감지: {user_id}, 기존 연결을 종료합니다.")
+            try:
+                old_ws = self.active_connections[user_id]
+                await old_ws.send_json(
+                    {
+                        "type": "disconnected",
+                        "reason": "다른 기기에서 연결됨",
+                        "code": "DUPLICATE_CONNECTION",
+                    }
+                )
+                await old_ws.close()
+            except Exception as e:
+                logger.error(f"기존 연결 종료에 실패하였습니다: {e}")
+            finally:
+                del self.active_connections[user_id]
+
+        # 연결 수 제한 체크
+        if len(self.active_connections) >= self.MAX_CONNECTIONS:
+            await websocket.close(
+                code=1008, reason="서버 연결 한계에 도달했습니다."  # Policy Violation
+            )
+            logger.warning(
+                f"연결 거부(한계 도달): user={user_id}, "
+                f"current={len(self.active_connections)}"
+            )
+            raise Exception("최대 연결 수 초과")
         await websocket.accept()
         self.active_connections[user_id] = websocket
         logger.info(
-            f"클라이언트 연결: {user_id}, 총 {len(self.active_connections)}개 연결"
+            f"클라이언트 연결: {user_id}"
+            f"총 {len(self.active_connections)}/{self.MAX_CONNECTIONS} 개 연결"
         )
 
     def disconnect(self, user_id: str):
@@ -85,8 +121,6 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
     - 경로 재계산
     - 경로 변경 (상위 3개 중 선택)
     """
-    pathfinding_service = PathfindingService()
-    guidance_service = GuidanceService(redis_client)
 
     await manager.connect(websocket, user_id)
 
@@ -401,7 +435,7 @@ async def handle_recalculate_route(
 
     try:
         # 현재 위치에서 가장 가까운 역 찾기
-        current_station_name = guidance_service._find_nearest_station_name(lat, lon)
+        current_station_name = guidance_service.find_nearest_station_name(lat, lon)
         destination_name = session["destination"]
 
         logger.info(f"재계산 시작: {current_station_name} → {destination_name}")
@@ -456,8 +490,9 @@ async def handle_end_navigation(user_id: str):
     if session:
         route_id = session.get("route_id")
 
-        # Redis 세션 삭제
-        redis_client.redis_client.delete(f"session:{user_id}")
+        # Redis 세션 삭제 => 내브 구현에 직접 접근하는 방식은 위험
+        # redis_client.redis_client.delete(f"session:{user_id}")
+        redis_client.delete_session(user_id)  # => 캡슐화 유지
 
         # 종료 이벤트 저장
         save_navigation_event.delay(user_id, "navigation_ended", {}, route_id)

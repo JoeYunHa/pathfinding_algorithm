@@ -19,7 +19,7 @@ class PathfindingService:
         self.raptor = McRaptor()
         logger.info("PathfindingService 초기화 완료")
 
-    def claculate_route(
+    def calculate_route(
         self, origin_name: str, destination_name: str, disability_type: str
     ) -> Optional[Dict[str, Any]]:
         """

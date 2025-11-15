@@ -42,6 +42,18 @@ class RedisSessionManager:
         }
         return self.redis_client.setex(session_key, 14400, json.dumps(session_data))
 
+    def delete_session(self, user_id: str) -> bool:
+        """
+        delete session
+        
+        Args:
+            user_id: 사용자 ID
+        Returns:
+            삭제 성공 여부
+        """
+        key = f"session:{user_id}"
+        return self.redis_client.delete(key) > 0
+
     def switch_route(self, user_id: str, target_rank: int) -> bool:
         """사용자가 1순위가 아닌 다른 순위의 경로를 선택하여 경로 변경"""
         session = self.get_session(user_id)
