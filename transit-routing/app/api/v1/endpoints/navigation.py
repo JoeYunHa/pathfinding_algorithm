@@ -13,7 +13,16 @@ from app.core.exceptions import KindMapException
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-pathfinding_service = PathfindingService()
+# lazy initialization pattern 사용
+_pathfinding_service = None
+
+
+def get_pathfinding_service():
+    """PathfindingService 인스턴스를 반환(싱글톤)"""
+    global _pathfinding_service
+    if _pathfinding_service is None:
+        _pathfinding_service = PathfindingService()
+    return _pathfinding_service
 
 
 @router.post("/calculate", response_model=RouteCalculatedResponse)
@@ -42,6 +51,7 @@ async def calculate_route(request: NavigationStartRequest):
         logger.info(
             f"REST 경로 계산: {request.origin} → {request.destination}, type={request.disability_type}"
         )
+        pathfinding_service = get_pathfinding_service()
 
         route_data = pathfinding_service.calculate_route(
             request.origin, request.destination, request.disability_type
