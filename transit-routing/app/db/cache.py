@@ -30,6 +30,8 @@ def initialize_cache():
     서버 시작 시 모든 정적 데이터를 메모리에 로드
     Thread-safe singleton pattern
     """
+    import os
+
     global _cache_init
     global _stations_cache, _stations_list_cache, _station_name_map_cache
     global _lines_cache, _transfer_conv_cache
@@ -37,6 +39,12 @@ def initialize_cache():
     with _cache_lock:
         if _cache_init:
             logger.info("캐시가 이미 초기화되었습니다.")
+            return
+
+        # 테스트 모드 체크: DB 연결 스킵 => for local unit test
+        if os.getenv("TESTING") == "true":
+            _cache_init = True
+            logger.info("테스트 모드: 캐시 초기화 스킵")
             return
 
         from app.db.database import (

@@ -17,12 +17,34 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# 서비스 초기화
-redis_client = init_redis()
+# Lazy initialization 패턴: 서비스 인스턴스를 필요할 때 생성
+_redis_client = None
+_pathfinding_service = None
+_guidance_service = None
 
-# module level에서 서비스 인스턴스가 한 번만 생성되도록 함
-pathfinding_service = PathfindingService()
-guidance_service = GuidanceService(redis_client)
+
+def get_redis_client():
+    """Redis 클라이언트를 반환 (싱글톤)"""
+    global _redis_client
+    if _redis_client is None:
+        _redis_client = init_redis()
+    return _redis_client
+
+
+def get_pathfinding_service():
+    """PathfindingService 인스턴스를 반환 (싱글톤)"""
+    global _pathfinding_service
+    if _pathfinding_service is None:
+        _pathfinding_service = PathfindingService()
+    return _pathfinding_service
+
+
+def get_guidance_service():
+    """GuidanceService 인스턴스를 반환 (싱글톤)"""
+    global _guidance_service
+    if _guidance_service is None:
+        _guidance_service = GuidanceService(get_redis_client())
+    return _guidance_service
 
 class ConnectionManager:
     """websocket 연결 관리자"""
@@ -145,17 +167,17 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
 
             # 메시지 타입별 처리
             if message_type == "start_navigation":
-                await handle_start_navigation(user_id, data, pathfinding_service)
+                await handle_start_navigation(user_id, data, get_pathfinding_service())
 
             elif message_type == "location_update":
-                await handle_location_update(user_id, data, guidance_service)
+                await handle_location_update(user_id, data, get_guidance_service())
 
             elif message_type == "switch_route":
                 await handle_switch_route(user_id, data)
 
             elif message_type == "recalculate_route":
                 await handle_recalculate_route(
-                    user_id, data, pathfinding_service, guidance_service
+                    user_id, data, get_pathfinding_service(), get_guidance_service()
                 )
 
             elif message_type == "end_navigation":
@@ -214,7 +236,7 @@ async def handle_start_navigation(
         route_data["route_id"] = route_id
 
         # Redis 세션 생성
-        redis_client.create_session(user_id, route_data)
+        get_redis_client().create_session(user_id, route_data)
 
         # 클라이언트에 경로 정보 전송
         await manager.send_message(
@@ -273,7 +295,7 @@ async def handle_location_update(
         return
 
     # 세션 확인
-    session = redis_client.get_session(user_id)
+    session = get_redis_client().get_session(user_id)
     if not session:
         await manager.send_error(
             user_id,
@@ -374,10 +396,10 @@ async def handle_switch_route(user_id: str, data: dict):
     logger.info(f"경로 변경 요청: user={user_id}, target_rank={target_rank}")
 
     try:
-        success = redis_client.switch_route(user_id, target_rank)
+        success = get_redis_client().switch_route(user_id, target_rank)
 
         if success:
-            session = redis_client.get_session(user_id)
+            session = get_redis_client().get_session(user_id)
 
             await manager.send_message(
                 user_id,
@@ -415,7 +437,7 @@ async def handle_recalculate_route(
     """
     현재 위치에서 목적지까지 새로운 경로 탐색
     """
-    session = redis_client.get_session(user_id)
+    session = get_redis_client().get_session(user_id)
 
     if not session:
         await manager.send_error(user_id, "활성 세션이 없습니다", "NO_ACTIVE_SESSION")
@@ -449,7 +471,7 @@ async def handle_recalculate_route(
         route_data["route_id"] = route_id
 
         # 세션 업데이트
-        redis_client.create_session(user_id, route_data)
+        get_redis_client().create_session(user_id, route_data)
 
         await manager.send_message(
             user_id,
@@ -485,14 +507,14 @@ async def handle_end_navigation(user_id: str):
     """
     세션 삭제 및 종료 이벤트 기록
     """
-    session = redis_client.get_session(user_id)
+    session = get_redis_client().get_session(user_id)
 
     if session:
         route_id = session.get("route_id")
 
         # Redis 세션 삭제 => 내브 구현에 직접 접근하는 방식은 위험
-        # redis_client.redis_client.delete(f"session:{user_id}")
-        redis_client.delete_session(user_id)  # => 캡슐화 유지
+        # get_redis_client().redis_client.delete(f"session:{user_id}")
+        get_redis_client().delete_session(user_id)  # => 캡슐화 유지
 
         # 종료 이벤트 저장
         save_navigation_event.delay(user_id, "navigation_ended", {}, route_id)
