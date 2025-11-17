@@ -89,6 +89,9 @@ docs/_build/
 docs/_static/
 docs/_templates/
 
+# Nginx ssl
+ssl/
+
 # Backup files
 *.bak
 *.backup
