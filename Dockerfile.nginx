@@ -9,7 +9,9 @@ COPY nginx/conf.d/kindmap_api.conf /etc/nginx/conf.d/
 
 EXPOSE 80
 
+# 헬스체크 (wget 명령어만)
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
   CMD wget --quiet --tries=1 --spider http://localhost/health || exit 1
 
-CMD ["nginx", "-g", "daemon off;"]ss
+# Nginx 실행
+CMD ["nginx", "-g", "daemon off;"]s
