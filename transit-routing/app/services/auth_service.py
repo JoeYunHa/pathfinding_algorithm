@@ -44,7 +44,7 @@ class AuthService:
                     disability_type=row[3],
                     is_active=row[4],
                     created_at=row[5],
-                    last_login=datetime.now(datetime.utc),
+                    last_login=datetime.now(timezone.utc),
                 )
 
     @staticmethod
@@ -177,4 +177,4 @@ class AuthService:
                 conn.commit()
 
     
-    
+

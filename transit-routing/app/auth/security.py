@@ -74,6 +74,6 @@ def decode_token(token: str) -> Optional[dict]:
             token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
         )
         return payload
-    except JWTError:
-        logger.error("JWT error: {e}")
+    except JWTError as e:
+        logger.error(f"JWT error: {e}")
         return None
