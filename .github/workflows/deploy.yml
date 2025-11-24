@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - jwt-login-implement
 
 permissions:
   id-token: write
@@ -118,11 +119,24 @@ jobs:
                 start_period: 5s
 
             fastapi:
-              image: ${REPOSITORY_URI}:fastapi-${IMAGE_TAG}
+              image: \${REPOSITORY_URI}:fastapi-\${IMAGE_TAG}
               container_name: kindmap-fastapi
               restart: unless-stopped
-              env_file:
-                - /home/ec2-user/.env
+              environment:
+                # CORS 설정 - ALLOWED_ORIGINS를 명시적으로 정의
+                ALLOWED_ORIGINS: "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://35.92.117.143,http://inha-capstone-03-frontend.s3-website-us-west-2.amazonaws.com"
+                # 다른 환경변수는 .env 파일에서 읽음 (있으면)
+                DB_HOST: \${DB_HOST:-km-routing-db.clqcgo84gd3x.us-west-2.rds.amazonaws.com}
+                DB_PORT: \${DB_PORT:-5432}
+                DB_NAME: \${DB_NAME:-postgres}
+                DB_USER: \${DB_USER:-postgres}
+                DB_PASSWORD: \${DB_PASSWORD}
+                REDIS_HOST: redis
+                REDIS_PORT: 6379
+                JWT_SECRET_KEY: \${JWT_SECRET_KEY}
+                JWT_ALGORITHM: HS256
+                ACCESS_TOKEN_EXPIRE_MINUTE: 30
+                REFRESH_TOKEN_EXPIRE_DAYS: 7
               expose:
                 - "8001"
               networks:
@@ -197,6 +211,13 @@ jobs:
               'cd /home/ec2-user/kindmap',
               'echo \"Writing docker-compose.yml...\" ',
               'echo \"${COMPOSE_CONTENT}\" | base64 -d > docker-compose.yml',
+              'echo \"Setting up environment variables...\" ',
+              'export DB_HOST=km-routing-db.clqcgo84gd3x.us-west-2.rds.amazonaws.com',
+              'export DB_PORT=5432',
+              'export DB_NAME=postgres',
+              'export DB_USER=postgres',
+              'export DB_PASSWORD=enlwuA230!',
+              'export JWT_SECRET_KEY=742dd1acd2fcba5d307c4d4db80547ad',
               'echo \"Logging into ECR...\" ',
               'aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}',
               'echo \"Pulling images...\" ',
