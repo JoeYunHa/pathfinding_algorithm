@@ -4,6 +4,7 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from uuid import UUID
 import logging
+import hashlib
 
 from app.core.config import settings
 
@@ -15,12 +16,24 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """평문 비밀번호와 해시된 비밀번호 비교"""
+    """
+    평문 비밀번호와 해시된 비밀번호 비교
+    72byte 초과의 경우 SHA-256 전처리를 수행 후 검증
+    """
+    if len(plain_password.encode("utf-8")) > 72:
+        plain_password = hashlib.sha256(plain_password.encode("utf-8")).hexdigest()
+
     return pwd_context.verify(plain_password, hashed_password)
 
 
 def get_password_hash(password: str) -> str:
-    """비밀번호 해싱"""
+    """
+    비밀번호 해싱
+    Bcrypt의 72byte 제한을 우회하기 위해 긴 비밀 번호는 SHA-256으로 전처리
+    """
+    if len(password.encode("utf-8")) > 72:
+        password = hashlib.sha256(password.encode("utf-8")).hexdigest()
+
     return pwd_context.hash(password)
 
 
