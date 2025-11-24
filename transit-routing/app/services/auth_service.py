@@ -2,6 +2,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional
 from uuid import UUID
 from jose import JWTError
+import psycopg2.extras
 
 from app.models.domain import User
 from app.auth.security import (
@@ -44,13 +45,13 @@ class AuthService:
                     disability_type=row[3],
                     is_active=row[4],
                     created_at=row[5],
-                    last_login=datetime.now(timezone.utc),
+                    last_login=None,
                 )
 
     @staticmethod
     def authenticate_user(email: str, password: str) -> Optional[User]:
         with get_db_connection() as conn:
-            with conn.cursor() as cur:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(
                     """
                     SELECT user_id, email, password_hash, username, disability_type, is_active, created_at, last_login
@@ -60,20 +61,20 @@ class AuthService:
                 )
 
                 row = cur.fetchone()
-                if not row or not verify_password(password, row[2]):
+                if not row or not verify_password(password, row['password_hash']):
                     return None
                 cur.execute(
-                    "UPDATE users SET last_login = NOW() WHERE user_id = %s", (row[0],)
+                    "UPDATE users SET last_login = NOW() WHERE user_id = %s", (row['user_id'],)
                 )
                 conn.commit()
 
                 return User(
-                    user_id=row[0],
-                    email=row[1],
-                    username=row[3],
-                    disability_type=row[4],
-                    is_active=row[5],
-                    created_at=row[6],
+                    user_id=row['user_id'],
+                    email=row['email'],
+                    username=row['username'],
+                    disability_type=row['disability_type'],
+                    is_active=row['is_active'],
+                    created_at=row['created_at'],
                     last_login=datetime.now(timezone.utc),
                 )
 
@@ -132,7 +133,7 @@ class AuthService:
     @staticmethod
     def get_user_by_id(user_id: UUID) -> Optional[User]:
         with get_db_connection() as conn:
-            with conn.cursor() as cur:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(
                     """
                         SELECT user_id, email, username, disability_type, is_active, created_at, last_login
@@ -144,13 +145,13 @@ class AuthService:
 
                 if row:
                     return User(
-                        user_id=row[0],
-                        email=row[1],
-                        username=row[2],
-                        disability_type=row[3],
-                        is_active=row[4],
-                        created_at=row[5],
-                        last_login=row[6],
+                        user_id=row['user_id'],
+                        email=row['email'],
+                        username=row['username'],
+                        disability_type=row['disability_type'],
+                        is_active=row['is_active'],
+                        created_at=row['created_at'],
+                        last_login=row['last_login'],
                     )
                 return None
 

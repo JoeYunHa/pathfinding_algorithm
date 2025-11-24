@@ -68,7 +68,7 @@ async def refresh_token(
 
     if not user_id:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token"
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="유효하지 않은 리프레시 토큰입니다."
         )
 
     access_token = create_access_token(subject=str(user_id))
