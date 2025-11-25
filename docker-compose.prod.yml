@@ -1,4 +1,3 @@
-# docker-compose.yml => 이 파일을 읽어서 배포하도록 깃 액션 변경 필요
 version: "3.8"
 
 services:
@@ -8,8 +7,9 @@ services:
     restart: unless-stopped
     networks:
       - kindmap-network
-    ports:
-      - "6379:6379"
+    # 보안상 외부 포트 매핑(6379:6379) 제거하고 내부 네트워크에만 노출
+    expose:
+      - "6379"
     volumes:
       - redis-data:/data
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
@@ -21,26 +21,25 @@ services:
       start_period: 5s
 
   fastapi:
-    build:
-      context: .
-      dockerfile: Dockerfile.fastapi
+    # 빌드된 이미지를 사용 (깃허브 액션이 변수 치환)
+    image: ${REPOSITORY_URI}:fastapi-${IMAGE_TAG}
     container_name: kindmap-fastapi
     restart: unless-stopped
+    # EC2 내부의 .env 파일 사용
     env_file:
-      - .env
+      - /home/ec2-user/.env
     environment:
-      # CORS 설정 - .env 파일 없이도 자동으로 설정됨
-      # environment 섹션이 env_file보다 우선순위가 높음
-      ALLOWED_ORIGINS: "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://35.92.117.143,http://inha-capstone-03-frontend.s3-website-us-west-2.amazonaws.com"
-    ports:
-      - "8001:8001"
+      # 배포 환경에 필요한 CORS 오리진 추가 (필요시 도메인 추가)
+      ALLOWED_ORIGINS: "http://localhost:3000,http://35.92.117.143,http://inha-capstone-03-frontend.s3-website-us-west-2.amazonaws.com"
+    # Nginx를 통해서만 접속하므로 외부 포트 노출을 막고 내부에만 노출
+    expose:
+      - "8001"
     networks:
       - kindmap-network
     depends_on:
       redis:
         condition: service_healthy
-    volumes:
-      - ./transit-routing:/app
+    # 프로덕션에서는 코드 볼륨 마운트 제거 (이미지 내 코드 사용)
     healthcheck:
       test:
         [
@@ -55,18 +54,20 @@ services:
       start_period: 40s
 
   nginx:
-    build:
-      context: .
-      dockerfile: Dockerfile.nginx
+    image: ${REPOSITORY_URI}:nginx-${IMAGE_TAG}
     container_name: kindmap-nginx
     restart: unless-stopped
     ports:
       - "80:80"
+      - "443:443" # https 사용을 위한 443 port open
     depends_on:
       fastapi:
         condition: service_healthy
     networks:
       - kindmap-network
+    # 호스트의 인증서 폴더 통째로 연결
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt
     healthcheck:
       test:
         [

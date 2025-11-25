@@ -1,4 +1,3 @@
-# .github/workflows/deploy.yml
 name: Build and Deploy to EC2
 
 on:
@@ -57,12 +56,7 @@ jobs:
           REPOSITORY_URI: ${{ steps.ecr-details.outputs.repository-uri }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          echo "=========================================="
-          echo "Building and pushing Docker images"
-          echo "=========================================="
-
-          # FastAPI 이미지
-          echo "Building FastAPI image..."
+          echo "Build and Push FastAPI Image"
           docker buildx build \
             --platform linux/amd64 \
             --file Dockerfile.fastapi \
@@ -70,13 +64,9 @@ jobs:
             --cache-to type=inline \
             --tag $REPOSITORY_URI:fastapi-$IMAGE_TAG \
             --tag $REPOSITORY_URI:fastapi-latest \
-            --push \
-            .
+            --push .
 
-          echo "✅ FastAPI image pushed: $REPOSITORY_URI:fastapi-$IMAGE_TAG"
-
-          # Nginx 이미지
-          echo "Building Nginx image..."
+          echo "Build and Push Nginx Image"
           docker buildx build \
             --platform linux/amd64 \
             --file Dockerfile.nginx \
@@ -84,87 +74,22 @@ jobs:
             --cache-to type=inline \
             --tag $REPOSITORY_URI:nginx-$IMAGE_TAG \
             --tag $REPOSITORY_URI:nginx-latest \
-            --push \
-            .
-
-          echo "✅ Nginx image pushed: $REPOSITORY_URI:nginx-$IMAGE_TAG"
+            --push .
 
       - name: Prepare deployment files
         env:
           REPOSITORY_URI: ${{ steps.ecr-details.outputs.repository-uri }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          # docker-compose.yml 생성
-          cat > docker-compose.prod.yml <<EOF
-          version: "3.8"
+          echo "Using docker-compose.prod.yml from repository..."
+          # 로컬에 있는 prod 파일을 읽어서 환경변수(${...})를 실제 값으로 치환
+          envsubst < docker-compose.prod.yml > deploy_compose.yml
 
-          services:
-            redis:
-              image: redis:7-alpine
-              container_name: kindmap-redis
-              restart: unless-stopped
-              networks:
-                - kindmap-network
-              expose:
-                - "6379"
-              volumes:
-                - redis-data:/data
-              command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
-              healthcheck:
-                test: ["CMD", "redis-cli", "ping"]
-                interval: 10s
-                timeout: 3s
-                retries: 3
-                start_period: 5s
+          # 확인용 출력
+          cat deploy_compose.yml
 
-            fastapi:
-              image: ${REPOSITORY_URI}:fastapi-${IMAGE_TAG}
-              container_name: kindmap-fastapi
-              restart: unless-stopped
-              env_file:
-                - /home/ec2-user/.env
-              expose:
-                - "8001"
-              networks:
-                - kindmap-network
-              depends_on:
-                redis:
-                  condition: service_healthy
-              healthcheck:
-                test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health').read()"]
-                interval: 30s
-                timeout: 3s
-                retries: 3
-                start_period: 40s
-
-            nginx:
-              image: ${REPOSITORY_URI}:nginx-${IMAGE_TAG}
-              container_name: kindmap-nginx
-              restart: unless-stopped
-              ports:
-                - "80:80"
-              depends_on:
-                fastapi:
-                  condition: service_healthy
-              networks:
-                - kindmap-network
-              healthcheck:
-                test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
-                interval: 30s
-                timeout: 3s
-                retries: 3
-                start_period: 10s
-
-          networks:
-            kindmap-network:
-              driver: bridge
-
-          volumes:
-            redis-data:
-              driver: local
-          EOF
-
-          echo "✅ docker-compose.prod.yml created"
+          # 이름 변경 (전송용)
+          mv deploy_compose.yml docker-compose.prod.yml
 
       - name: Deploy to EC2 via SSM (Fire and Forget)
         env:
@@ -174,73 +99,28 @@ jobs:
           AWS_REGION: ${{ steps.ecr-details.outputs.region }}
           ECR_REGISTRY: ${{ steps.ecr-details.outputs.registry }}
         run: |
-          echo "=========================================="
-          echo "Sending deployment command to EC2"
-          echo "=========================================="
-
-          # docker-compose 파일을 base64로 인코딩
           COMPOSE_CONTENT=$(cat docker-compose.prod.yml | base64 -w 0)
 
-          # SSM 명령 전송 (대기 없음)
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids $INSTANCE_ID \
             --document-name "AWS-RunShellScript" \
             --parameters commands="[
               'set -e',
               'exec > >(tee -a /var/log/kindmap-deploy.log) 2>&1',
-              'echo \"==========================================\" ',
-              'echo \"KindMap Deployment Started\" ',
-              'echo \"Timestamp: \$(date)\" ',
-              'echo \"==========================================\" ',
-              'echo \"Creating deployment directory...\" ',
+              'echo \"Started Deployment: \$(date)\"',
               'mkdir -p /home/ec2-user/kindmap',
               'cd /home/ec2-user/kindmap',
-              'echo \"Writing docker-compose.yml...\" ',
               'echo \"${COMPOSE_CONTENT}\" | base64 -d > docker-compose.yml',
-              'echo \"Logging into ECR...\" ',
               'aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}',
-              'echo \"Pulling images...\" ',
               'docker pull ${REPOSITORY_URI}:fastapi-${IMAGE_TAG}',
               'docker pull ${REPOSITORY_URI}:nginx-${IMAGE_TAG}',
-              'echo \"Stopping existing containers...\" ',
               'docker-compose down || true',
-              'echo \"Starting new containers...\" ',
               'docker-compose up -d',
-              'echo \"Waiting for services to be healthy...\" ',
-              'sleep 15',
-              'echo \"Container status:\" ',
-              'docker-compose ps',
-              'echo \"Health check:\" ',
-              'curl -f http://localhost/health || echo \"Health check failed\" ',
-              'echo \"Cleaning up old images...\" ',
-              'docker image prune -af --filter \"until=24h\" ',
-              'echo \"==========================================\" ',
-              'echo \"✅ Deployment completed successfully\" ',
-              'echo \"Timestamp: \$(date)\" ',
-              'echo \"==========================================\" '
+              'docker image prune -af --filter \"until=24h\"',
+              'echo \"Deployment Success: \$(date)\"'
             ]" \
             --region $AWS_REGION \
             --output text \
             --query 'Command.CommandId')
 
-          echo ""
-          echo "=========================================="
-          echo "✅ Deployment Command Sent Successfully"
-          echo "=========================================="
-          echo "Command ID: $COMMAND_ID"
-          echo "Instance ID: $INSTANCE_ID"
-          echo "Image Tag: $IMAGE_TAG"
-          echo ""
-          echo "🚀 Deployment is running in background on EC2"
-          echo "📋 Deployment logs: /var/log/kindmap-deploy.log"
-          echo ""
-          echo "🔍 To check deployment status, run:"
-          echo "   aws ssm get-command-invocation \\"
-          echo "     --command-id $COMMAND_ID \\"
-          echo "     --instance-id $INSTANCE_ID \\"
-          echo "     --region $AWS_REGION"
-          echo ""
-          echo "📊 Or SSH to EC2 and check:"
-          echo "   tail -f /var/log/kindmap-deploy.log"
-          echo "   docker-compose -f /home/ec2-user/kindmap/docker-compose.yml ps"
-          echo "=========================================="
+          echo "Deployment Command ID: $COMMAND_ID"
