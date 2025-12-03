@@ -156,12 +156,12 @@ class RedisPubSubManager:
 
 
 # singleton instance
-_pubsub_manger: Optional[RedisPubSubManager] = None
+_pubsub_manager: Optional[RedisPubSubManager] = None
 
 
 def get_pubsub_manager() -> RedisPubSubManager:
     """Redis Pub/Sub instance 반환"""
-    global _pubsub_manger
-    if _pubsub_manger is None:
-        _pubsub_manger = RedisPubSubManager()
-    return _pubsub_manger
+    global _pubsub_manager
+    if _pubsub_manager is None:
+        _pubsub_manager = RedisPubSubManager()
+    return _pubsub_manager

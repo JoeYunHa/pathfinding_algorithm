@@ -144,23 +144,23 @@ class ConnectionManager:
                 f"메시지 전송 실패: user_id={user_id} (로컬 연결 없음, Pub/Sub 비활성화)"
             )
 
-        async def handle_pubsub_message(self, user_id: str, message: dict):
-            """
-            Redis Pub/Sub로부터 수신한 메시지 처리
+    async def handle_pubsub_message(self, user_id: str, message: dict):
+        """
+        Redis Pub/Sub로부터 수신한 메시지 처리
 
-            [호출 경로]
-            RedisPubSubManager._handle_message() → 이 메서드 → WebSocket 전송
-            """
-            if user_id in self.active_connections:
-                try:
-                    await self.active_connections[user_id].send_json(message)
-                    logger.debug(f"Pub/Sub 메시지 전송 성공: user_id={user_id}")
-                except Exception as e:
-                    logger.error(f"Pub/Sub 메시지 전송 실패: {e}")
-                    self.disconnect(user_id)
-            else:
-                # 이 백엔드에는 연결이 없음 => 다른 백엔드에서 처리할 것
-                logger.debug(f"Pub/Sub 메시지 무시: user_id={user_id} (로컬 연결 없음)")
+        [호출 경로]
+        RedisPubSubManager._handle_message() → 이 메서드 → WebSocket 전송
+        """
+        if user_id in self.active_connections:
+            try:
+                await self.active_connections[user_id].send_json(message)
+                logger.debug(f"Pub/Sub 메시지 전송 성공: user_id={user_id}")
+            except Exception as e:
+                logger.error(f"Pub/Sub 메시지 전송 실패: {e}")
+                self.disconnect(user_id)
+        else:
+            # 이 백엔드에는 연결이 없음 => 다른 백엔드에서 처리할 것
+            logger.debug(f"Pub/Sub 메시지 무시: user_id={user_id} (로컬 연결 없음)")
 
     async def send_error(self, user_id: str, error_message: str, code: str = None):
         """에러 메시지 전송"""

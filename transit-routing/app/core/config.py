@@ -50,7 +50,7 @@ class Settings:
     )
 
     # JWT 설정
-    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "my -jwt-secret-key")
+    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "my-jwt-secret-key")
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
@@ -132,7 +132,3 @@ EPSILON_CONFIG = {
 }
 
 ALLOWED_HOSTS: list[str] = ["localhost", "127.0.0.1", "0.0.0.0"]
-
-# 세션 TTL 설정
-SESSION_TTL_SECONDS: int = int(os.getenv("SESSION_TTL_SECONDS", 1800))
-# 30 m => 모니터링하면서 수정 필
