@@ -4,7 +4,7 @@ from typing import Optional, Dict, Any, Tuple, List
 from datetime import datetime
 import logging
 
-from app.core.config import settings, SESSION_TTL_SECONDS
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ class RedisSessionManager:
                 "last_update": datetime.now().isoformat(),
             }
             self.redis_client.setex(
-                session_key, SESSION_TTL_SECONDS, json.dumps(session_data)
+                session_key, settings.SESSION_TTL_SECONDS, json.dumps(session_data)
             )
             logger.debug(f"세션 생성: user_id = {user_id}")
             return True
@@ -109,7 +109,7 @@ class RedisSessionManager:
         session["last_update"] = datetime.now().isoformat()
 
         return self.redis_client.setex(
-            f"session:{user_id}", SESSION_TTL_SECONDS, json.dumps(session)
+            f"session:{user_id}", settings.SESSION_TTL_SECONDS, json.dumps(session)
         )
 
     def get_session(self, user_id: str) -> Optional[Dict]:
@@ -169,7 +169,7 @@ class RedisSessionManager:
                         session[field] = json.dumps(session[field])
 
                 self.redis_client.setex(
-                    f"session:{user_id}", SESSION_TTL_SECONDS, json.dumps(session)
+                    f"session:{user_id}", settings.SESSION_TTL_SECONDS, json.dumps(session)
                 )
         except Exception as e:
             logger.error(f"위치 업데이트 실패: {e}")
