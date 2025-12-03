@@ -21,6 +21,14 @@ class Settings:
 
     REDIS_HOST: str = os.getenv("REDIS_HOST", "redis")
     REDIS_PORT: int = int(os.getenv("REDIS_PORT", 6379))
+
+    # Redis Pub/Sub 설정
+    REDIS_PUBSUB_CHANNEL: str = os.getenv("REDIS_PUBSUB_CHANNEL", "kindmap_events")
+    REDIS_PUBSUB_ENABLED: bool = (
+        os.getenv("REDIS_PUBSUB_ENABLED", "true").lower() == "true"
+    )
+    REDIS_MAX_CONNECTIONS: int = int(os.getenv("REDIS_MAX_CONNECTIONS", 50))
+
     # 세션 TTL 설정
     SESSION_TTL_SECONDS: int = int(
         os.getenv("SESSION_TTL_SECONDS", 1800)
