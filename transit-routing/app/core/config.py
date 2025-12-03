@@ -26,10 +26,10 @@ class Settings:
         os.getenv("SESSION_TTL_SECONDS", 1800)
     )  # 30 m => 모니터링하면서 수정 필
 
-    # 경로 캐시 TTL
+    # 경로 캐시 TTL (시연용 서버: 14일)
     ROUTE_CACHE_TTL_SECONDS: int = int(
-        os.getenv("ROUTE_CACHE_TTL_SECONDS", 3600)
-    )  # 1시간
+        os.getenv("ROUTE_CACHE_TTL_SECONDS", 1209600)
+    )  # 14일 (1209600초)
 
     # 캐시 메트릭 활성화 플래그
     ENABLE_CACHE_METRICS: bool = (
