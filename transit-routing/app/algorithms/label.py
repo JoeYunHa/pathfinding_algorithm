@@ -126,6 +126,7 @@ class Label:
 
         # 중간 역 포함하여 구축
         labels_path = []
+        cur = self
         while cur is not None:
             labels_path.append(cur)
             cur = cur.parent_label
