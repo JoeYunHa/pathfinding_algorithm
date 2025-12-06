@@ -332,71 +332,49 @@ def _get_intermediate_stations(
     station_order_map: Dict,
 ) -> List[str]:
     """
-    두 역 사이의 모든 중간 역을 반환 (from 제외, to 포함)
-
-    Args:
-        from_station_cd: 출발역 코드
-        to_station_cd: 도착역 코드
-        line: 노선명
-        direction: 이동 방향 ("up", "down", "in", "out")
-        line_stations: {(station_cd, line): {"up": [...], "down": [...], ...}}
-        station_order_map: {(station_cd, line): order}
-
-    Returns:
-        [중간역_1, 중간역_2, ..., to_station_cd]
+    [수정된 버전] 리스트 순회 대신 station_order(순서 번호)를 사용하여 수학적으로 중간 역을 계산합니다.
     """
 
-    # [디버깅 코드 시작] ---------------------------------------------------
-    # 5호선 광화문(2534) -> 군자(2545) 케이스일 때만 로그 출력
-    if line == "5호선" and from_station_cd == "2534":
-        print(f"\n[DEBUG] 🚨 중간역 탐색 시작! ({from_station_cd} -> {to_station_cd})")
-        print(f" - 요청된 방향(Direction): {direction}")
-
-        # 실제 메모리에 로드된 리스트 확인
-        stations_map = line_stations.get((from_station_cd, line))
-        if stations_map:
-            target_list = stations_map.get(direction, [])
-            print(f" - 탐색할 역 리스트({len(target_list)}개): {target_list}")
-
-            # 리스트 안에 목적지가 있는지 확인
-            if to_station_cd in target_list:
-                print(f" - ✅ 리스트 안에 목적지({to_station_cd})가 존재함!")
-            else:
-                print(f" - ❌ 리스트 안에 목적지가 없음! -> 빈 리스트 반환하게 됨")
-        else:
-            print(" - ❌ line_stations 메모리 로드 실패 (Key Error)")
-    # [디버깅 코드 끝] -----------------------------------------------------
-
-    # 출발역과 도착역의 순서 가져오기
+    # 1. 출발역과 도착역의 순서(Order)를 가져옵니다.
     from_order = station_order_map.get((from_station_cd, line))
     to_order = station_order_map.get((to_station_cd, line))
 
+    # 데이터가 없으면 도착역만 반환 (Fallback)
     if from_order is None or to_order is None:
-        # 폴백: 목적지만 반환
+        # [DEBUG] 로그: 순서 정보 누락
+        print(
+            f"[WARN] 순서 정보 없음: {from_station_cd}({from_order}) -> {to_station_cd}({to_order})"
+        )
         return [to_station_cd]
 
-    # 해당 방향의 모든 역 가져오기
-    stations_map = line_stations.get((from_station_cd, line))
-    if not stations_map:
+    # 2. 순서 차이 계산
+    # 예: 광화문(20) -> 군자(31) 이면 range(21, 32)
+    start_idx = min(from_order, to_order)
+    end_idx = max(from_order, to_order)
+
+    # 3. 해당 범위에 있는 모든 역을 찾습니다. (DB가 완벽하므로 이 방식이 가장 안전함)
+    # station_order_map = { (station_cd, line): order, ... } 구조라고 가정
+    intermediate_candidates = []
+
+    for (s_cd, s_line), s_order in station_order_map.items():
+        # 같은 노선이고, 출발~도착 순서 사이에 있는 역만 추출
+        if s_line == line and start_idx < s_order <= end_idx:
+            intermediate_candidates.append((s_order, s_cd))
+
+    # 4. 순서대로 정렬
+    # 상행/하행 여부에 따라 정렬 순서를 결정합니다.
+    # from_order < to_order 이면 정방향(오름차순), 반대면 역방향(내림차순)
+    is_ascending = from_order < to_order
+    intermediate_candidates.sort(key=lambda x: x[0], reverse=not is_ascending)
+
+    # 5. 결과 추출 (역 코드만 리스트로 변환)
+    result_stations = [code for order, code in intermediate_candidates]
+
+    # [검증] 결과가 비어있다면, 5호선 갈림길 등의 문제로 범위가 꼬인 경우
+    if not result_stations:
+        print(
+            f"[WARN] 중간역 탐색 실패 (범위 내 역 없음): {from_station_cd} -> {to_station_cd}"
+        )
         return [to_station_cd]
 
-    stations_in_direction = stations_map.get(direction, [])
-
-    if not stations_in_direction:
-        return [to_station_cd]
-
-    # from과 to 사이의 모든 역 찾기 (to 포함, from 제외)
-    result = []
-    found_destination = False
-
-    for station_cd in stations_in_direction:
-        result.append(station_cd)
-        if station_cd == to_station_cd:
-            found_destination = True
-            break
-
-    if not found_destination:
-        # 파레토 최적해이므로 발생하지 않을테지만, 방어적 프로그래밍
-        result.append(to_station_cd)
-
-    return result
+    return result_stations
