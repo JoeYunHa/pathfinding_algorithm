@@ -23,6 +23,12 @@ class DistanceCalculator:
         with open(self.cache_file, "wb") as f:
             pickle.dump(self.cache, f)
 
+    def calculate_distance(
+        self, lat1: float, lon1: float, lat2: float, lon2: float
+    ) -> float:
+        """두 좌표 간 거리 계산(meter)"""
+        return self.haversine((lat1, lon1), (lat2, lon2))
+
     def haversine(
         self, coord1: Tuple[float, float], coord2: Tuple[float, float]
     ) -> float:
