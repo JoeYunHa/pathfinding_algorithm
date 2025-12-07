@@ -91,6 +91,9 @@ class Settings:
     VOICE_AUDIO_FORMAT: str = os.getenv("VOICE_AUDIO_FORMAT", "webm")
     VOICE_SAMPLE_RATE: int = int(os.getenv("VOICE_SAMPLE_RATE", "16000"))
 
+    # station name과 code
+    STATION_DATA_PATH: str = os.getenv("STATION_DATA_PATH", "app/data/stations.json")
+
 
 settings = Settings()  # 모듈화
 
