@@ -434,7 +434,7 @@ def get_all_congestion_data() -> List[Dict]:
 
 def load_facility_rows() -> list:
     """
-    [New] DB에서 편의시설 데이터를 조회하여 C++ 엔진에 전달할 포맷으로 변환
+    DB에서 편의시설 데이터를 조회하여 C++ 엔진에 전달할 포맷으로 변환
     Target Table: subway_facility_total
     """
     query = """
