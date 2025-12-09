@@ -96,8 +96,11 @@ class PathfindingServiceCPP:
             stations_dict[station_cd] = {
                 "name": station["name"],
                 "line": station["line"],
-                "latitude": station["lat"],  # C++ expects "latitude"
-                "longitude": station["lng"],  # C++ expects "longitude"
+                "latitude": station["lat"],
+                "longitude": station["lng"],
+                "station_name": station["name"],
+                "station_cd": station_cd,
+                "line": station["line"],
             }
 
         logger.debug(f"역 정보 로드 완료: {len(stations_dict)}개 역")
@@ -105,7 +108,7 @@ class PathfindingServiceCPP:
         # 2. 노선별 역 순서 (line_stations)
         line_stations_dict = {}
         lines_dict = get_lines_dict()
-        sections = get_all_sections()
+        # sections = get_all_sections()
 
         # line_stations 구조 생성
         # {(station_cd, line): {"up": [station_cds...], "down": [station_cds...]}}
@@ -183,7 +186,9 @@ class PathfindingServiceCPP:
                 slot_key = f"t_{i}"
                 raw_value = cong.get(slot_key, 57)  # 기본값 57%
                 # 정규화: 0-100 -> 0.0-1.0
-                time_slots[slot_key] = float(raw_value) / 100.0 if raw_value is not None else 0.57
+                time_slots[slot_key] = (
+                    float(raw_value) / 100.0 if raw_value is not None else 0.57
+                )
 
             congestion_dict[key] = time_slots
 
