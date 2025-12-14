@@ -235,7 +235,7 @@ class PathfindingServiceCPP:
             norm_name = raw_name.split("(")[0].replace("역", "").strip()
             if norm_name not in station_name_map:
                 station_name_map[norm_name] = []
-            station_name_map[station_name].append((station_cd, station_info["line"]))
+            station_name_map[norm_name].append((station_cd, station_info["line"]))
 
         # 환승역(2개 이상 노선이 있는 역)에 대해 환승 조합 생성
         for station_name, station_line_pairs in station_name_map.items():
