@@ -110,42 +110,71 @@ namespace pathfinding
             line_topology_[{sid, line}] = dl;
         }
 
+        // 1. 역 이름 정규화 람다 함수 (Python 로직과 동일하게 맞춤)
+        auto normalize_name = [](std::string name) -> std::string
+        {
+            // 1. 괄호 '(' 제거 (예: "서울역(1호선)" -> "서울역")
+            size_t paren_pos = name.find('(');
+            if (paren_pos != std::string::npos)
+            {
+                name = name.substr(0, paren_pos);
+            }
+
+            // 2. "역" 글자 제거 (UTF-8에서 "역"은 3바이트: 0xEC, 0x97, 0xAD)
+            // 단순하게 끝이 "역"으로 끝나면 제거
+            std::string suffix = "역";
+            if (name.length() >= suffix.length())
+            {
+                if (name.compare(name.length() - suffix.length(), suffix.length(), suffix) == 0)
+                {
+                    name = name.substr(0, name.length() - suffix.length());
+                }
+            }
+
+            // 3. 앞뒤 공백 제거 (간단 구현)
+            const char *ws = " \t\n\r\f\v";
+            name.erase(name.find_last_not_of(ws) + 1);
+            name.erase(0, name.find_first_not_of(ws));
+
+            return name;
+        };
+
         // 4. Transfers (거리 + 환승역 정보)
         std::unordered_map<std::string, std::vector<StationID>> name_to_ids;
         for (const auto &s : stations_)
         {
-            name_to_ids[s.name].push_back(s.id);
+            std::string norm_name = normalize_name(s.name);
+            name_to_ids[norm_name].push_back(s.id);
         }
 
+        int linked_count = 0; // 디버깅용 카운터
         for (auto item : transfers_dict)
         {
             py::tuple key = item.first.cast<py::tuple>();
             std::string from_cd = py::str(key[0]);
 
-            // 출발 역 코드가 유효하지 않으면 패스
             if (code_to_id_.find(from_cd) == code_to_id_.end())
                 continue;
 
             StationID from_sid = code_to_id_[from_cd];
-            std::string f_line = py::str(key[1]); // 출발 노선
-            std::string t_line = py::str(key[2]); // 목적지 노선 (환승할 노선)
+            std::string f_line = py::str(key[1]);
+            std::string t_line = py::str(key[2]);
 
             py::dict val = item.second.cast<py::dict>();
 
             TransferData td;
             td.distance = val["distance"].cast<double>();
 
-            // 목적지 역 ID(to_station_id) 찾기
-            // 현재 역(from_sid)과 이름이 같으면서, 노선이 t_line인 역을 찾습니다.
+            // [Step B] 목적지 역 ID(to_station_id) 찾기
             bool target_found = false;
-            std::string current_station_name = stations_[from_sid].name;
 
-            // 해당 이름(예: 서울역)을 가진 모든 역 ID를 순회
-            if (name_to_ids.find(current_station_name) != name_to_ids.end())
+            // 현재 역 이름을 정규화해서 검색
+            std::string current_norm_name = normalize_name(stations_[from_sid].name);
+
+            if (name_to_ids.find(current_norm_name) != name_to_ids.end())
             {
-                for (StationID candidate_id : name_to_ids[current_station_name])
+                for (StationID candidate_id : name_to_ids[current_norm_name])
                 {
-                    // 후보 역의 노선이 우리가 갈아타려는 노선(t_line)과 같다면 빙고!
                     if (stations_[candidate_id].line == t_line)
                     {
                         td.to_station_id = candidate_id;
@@ -157,16 +186,12 @@ namespace pathfinding
 
             if (target_found)
             {
-                // 목적지를 찾았을 때만 환승 정보를 등록합니다.
                 transfers_[{from_sid, f_line, t_line}] = td;
-            }
-            else
-            {
-                // 디버깅 -> 데이터 정합성 문제로 환승 대상을 못 찾음
-                // std::cerr << "[WARN] Transfer target missing: " << current_station_name
-                //           << " (" << f_line << " -> " << t_line << ")" << std::endl;
+                linked_count++;
             }
         }
+
+        std::cout << "[C++] Transfer Links Created: " << linked_count << std::endl;
 
         // 5. Congestion
         for (auto item : congestion_dict)
