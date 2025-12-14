@@ -67,10 +67,11 @@ namespace pathfinding
         double helper = 0.0;
     };
 
-    // 환승 데이터 (거리 정보만 유지, 점수는 역 단위로 통합)
+    // 환승 데이터 (거리 정보 + 환승역 정보만 유지, 점수는 역 단위로 통합)
     struct TransferData
     {
         double distance;
+        StationID to_station_id; // 환승 시 도착하는 역 code
     };
 
     // Label (Memory Pool 최적화)
