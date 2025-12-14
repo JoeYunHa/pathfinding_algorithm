@@ -437,10 +437,11 @@ class PathfindingServiceCPP:
 
             # 각 경로 정보 생성
             routes_info = []
-            for rank, (label, score) in enumerate(top_3_routes, start=1):
+            for rank, label in enumerate(top_3_routes, start=1):
                 # C++ Label 객체에서 정보 추출
                 route_sequence = engine.reconstruct_route(label, self.data_container)
                 route_lines = engine.reconstruct_lines(label)
+                score = label.score
 
                 # 환승 정보 추출 (Label 객체를 역추적하여 구성)
                 transfer_info = self._extract_transfer_info(label, engine)

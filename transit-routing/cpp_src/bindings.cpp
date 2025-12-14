@@ -43,7 +43,8 @@ PYBIND11_MODULE(pathfinding_cpp, m)
         .def_readonly("current_line", &Label::current_line)
         .def_readonly("max_transfer_difficulty", &Label::max_transfer_difficulty)
         .def_property_readonly("avg_convenience", &Label::avg_convenience)
-        .def_property_readonly("avg_congestion", &Label::avg_congestion);
+        .def_property_readonly("avg_congestion", &Label::avg_congestion)
+        .def_readonly("score", &Label::score_cache);
 
     py::class_<DataContainer>(m, "DataContainer")
         .def(py::init<>())
