@@ -87,8 +87,8 @@ class Settings:
 
     # Faster-Whisper 모델 설정
     WHISPER_MODEL_SIZE: str = os.getenv(
-        "WHISPER_MODEL_SIZE", "medium"
-    )  # tiny, base, small, medium, large
+        "WHISPER_MODEL_SIZE", "base"
+    )  # medium -> OOM 발생!!! base 사용하기
     WHISPER_MODEL_DIR: str = os.getenv("WHISPER_MODEL_DIR", "./models/whisper")
     WHISPER_USE_GPU: bool = os.getenv("WHISPER_USE_GPU", "false").lower() == "true"
     WHISPER_NUM_THREADS: int = int(os.getenv("WHISPER_NUM_THREADS", "4"))
