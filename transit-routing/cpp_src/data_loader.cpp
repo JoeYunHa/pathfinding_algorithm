@@ -107,6 +107,25 @@ namespace pathfinding
                         dl.down.push_back(code_to_id_[n_cd]);
                 }
             }
+            // 순환선 내외선 처리 추가
+            if (dirs.contains("in"))
+            {
+                for (auto n : dirs["in"].cast<py::list>())
+                {
+                    std::string n_cd = py::str(n);
+                    if (code_to_id_.count(n_cd))
+                        dl.in.push_back(code_to_id_[n_cd]);
+                }
+            }
+            if (dirs.contains("out"))
+            {
+                for (auto n : dirs["out"].cast<py::list>())
+                {
+                    std::string n_cd = py::str(n);
+                    if (code_to_id_.count(n_cd))
+                        dl.out.push_back(code_to_id_[n_cd]);
+                }
+            }
             line_topology_[{sid, line}] = dl;
         }
 

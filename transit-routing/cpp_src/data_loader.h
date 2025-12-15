@@ -65,6 +65,9 @@ namespace pathfinding
         {
             std::vector<StationID> up;
             std::vector<StationID> down;
+            // 순환선 벡터 추가
+            std::vector<StationID> in;
+            std::vector<StationID> out;
         };
         const DirectionLines &get_next_stations(StationID id, const std::string &line) const;
 

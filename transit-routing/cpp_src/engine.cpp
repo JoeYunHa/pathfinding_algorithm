@@ -136,6 +136,8 @@ namespace pathfinding
                     };
                     process_dir(next_stops.up, Direction::UP);
                     process_dir(next_stops.down, Direction::DOWN);
+                    process_dir(next_stops.in, Direction::IN);
+                    process_dir(next_stops.out, Direction::OUT);
 
                     // 수정!!!
                     // B. Transfer
