@@ -45,6 +45,7 @@ class Settings:
     )
 
     # C++ 엔진 사용 여부
+    # 환경변수를 읽어오도록 설정
     USE_CPP_ENGINE: bool = os.getenv("USE_CPP_ENGINE", "false").lower() == "true"
 
     # 성능 모니터링 설정
